@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --dialog: 0 0% 100%;
+    --dialog-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 217.2 91.2% 59.8%;
+    --radius: 0.5rem;
+
+    /* DataGrid Light Theme */
+    --datagrid-bg: #ffffff;
+    --datagrid-border: #e2e8f0;
+    --datagrid-text: #0f172a;
+    --datagrid-header-bg: #f8fafc;
+    --datagrid-header-color: #64748b;
+    --datagrid-header-border: #e2e8f0;
+    --datagrid-row-border: #f1f5f9;
+    --datagrid-row-hover: #f8fafc;
+    --datagrid-footer-bg: #f8fafc;
+    --datagrid-cell-text: #0f172a;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 217.2 32.6% 17.5%;
+    --card-foreground: 210 40% 98%;
+    --dialog: 222.2 47.4% 11.2%;
+    --dialog-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 217.2 91.2% 59.8%;
+
+    /* DataGrid Dark Theme */
+    --datagrid-bg: #1e293b;
+    --datagrid-border: rgba(51, 65, 85, 0.5);
+    --datagrid-text: #e2e8f0;
+    --datagrid-header-bg: #0f172a;
+    --datagrid-header-color: #94a3b8;
+    --datagrid-header-border: rgba(51, 65, 85, 0.5);
+    --datagrid-row-border: rgba(51, 65, 85, 0.4);
+    --datagrid-row-hover: rgba(51, 65, 85, 0.4);
+    --datagrid-footer-bg: #0f172a;
+    --datagrid-cell-text: #e2e8f0;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', 'Roboto', sans-serif;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+}
+
+.MuiDataGrid-menu .MuiPaper-root,
+.MuiDataGrid-panel .MuiPaper-root {
+  background-color: var(--datagrid-bg);
+  border: 1px solid var(--datagrid-border);
+  color: var(--datagrid-text);
+  box-shadow: 0 10px 15px -3px rgb(15 23 42 / 0.12), 0 4px 6px -4px rgb(15 23 42 / 0.12);
+}
+
+.MuiDataGrid-menu .MuiMenuItem-root {
+  color: var(--datagrid-text);
+}
+
+.MuiDataGrid-menu .MuiMenuItem-root:hover {
+  background-color: var(--datagrid-row-hover);
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+.dark ::-webkit-scrollbar-track { background: #1e293b; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+.dark ::-webkit-scrollbar-thumb { background: #475569; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #475569; }
