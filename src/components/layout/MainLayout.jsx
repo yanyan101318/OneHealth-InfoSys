@@ -1,4 +1,3 @@
-import { useCallback } from 'react'
 import { Outlet } from 'react-router-dom'
 import Navbar from './Navbar'
 import Sidebar from './Sidebar'
@@ -12,10 +11,10 @@ import { cn } from '../../lib/utils'
 export default function MainLayout() {
   const { sidebarOpen } = useAppStore()
   const { currentUser, isLocked, setIsLocked } = useAuth()
-  const lockSession = useCallback(() => setIsLocked(true), [setIsLocked])
   useInactivityTimer({
     enabled: Boolean(currentUser) && !isLocked,
-    onInactivity: lockSession,
+    isLocked,
+    setIsLocked,
   })
 
   return (

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -14,6 +14,16 @@ import { auth, db } from '../lib/firebase'
 
 export const CURRENT_VERSION = 'v2.3.4'
 const VERSION_STORAGE_KEY = 'lastSeenVersion'
+const SESSION_LOCK_STORAGE_KEY = 'isSessionLocked'
+
+function readSessionLock() {
+  try {
+    return sessionStorage.getItem(SESSION_LOCK_STORAGE_KEY) === 'true'
+  } catch (error) {
+    console.warn('Unable to read session lock state:', error)
+    return false
+  }
+}
 
 const AuthContext = createContext(null)
 
@@ -23,7 +33,19 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const [showWhatsNew, setShowWhatsNew] = useState(false)
   const [requiresPasswordChange, setRequiresPasswordChange] = useState(false)
-  const [isLocked, setIsLocked] = useState(false)
+  const [isLocked, setIsLockedState] = useState(readSessionLock)
+  const setIsLocked = useCallback((locked) => {
+    setIsLockedState(locked)
+    try {
+      if (locked) {
+        sessionStorage.setItem(SESSION_LOCK_STORAGE_KEY, 'true')
+      } else {
+        sessionStorage.removeItem(SESSION_LOCK_STORAGE_KEY)
+      }
+    } catch (error) {
+      console.warn('Unable to persist session lock state:', error)
+    }
+  }, [])
 
   // Keep the app in its loading state until Firebase restores the persisted user
   // and the corresponding profile has been loaded.
