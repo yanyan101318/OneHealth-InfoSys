@@ -3,6 +3,7 @@ import {
   BarChart3,
   Building2,
   CalendarDays,
+  FileText,
   Home,
   Users,
   UserRound,
@@ -21,9 +22,11 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import { collection, getDocs } from 'firebase/firestore'
 import { toast } from 'sonner'
 import { db } from '../lib/firebase'
+import { isAdminUser } from '../lib/facilityAccess'
+import { useFacilityFilter } from '../hooks/useFacilityFilter'
 import { useAuth } from '../context/AuthContext'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Skeleton } from '../components/ui/skeleton'
@@ -34,7 +37,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select'
-import { Avatar, AvatarFallback } from '../components/ui/avatar'
 import { StatCard, ChartContainer, ActivityFeed } from '../components/dashboard/DashboardWidgets'
 import PageHeader from '../components/layout/PageHeader'
 import useAppStore from '../store/useAppStore'
@@ -108,79 +110,41 @@ export default function Dashboard() {
   const [facilities, setFacilities] = useState([])
   const [activity, setActivity] = useState([])
   const [loading, setLoading] = useState(true)
+  const patientsCollection = useMemo(() => collection(db, 'patients'), [])
+  const syncLogsCollection = useMemo(() => collection(db, 'sync_logs'), [])
+  const patientsQuery = useFacilityFilter(patientsCollection)
+  const syncLogsQuery = useFacilityFilter(syncLogsCollection)
   const weekOptions = useMemo(() => getWeeksInMonth(Number(year), Number(month)), [year, month])
   const selectedWeek = weekOptions.find((item) => item.value === week) || weekOptions[0]
 
   useEffect(() => {
     let active = true
     async function loadDashboard() {
+      if (!currentUser?.uid || !patientsQuery || !syncLogsQuery) {
+        setPatients([])
+        setFacilities([])
+        setActivity([])
+        setLoading(false)
+        return
+      }
+
       setLoading(true)
       try {
-        const facilitySnapshot = await getDocs(collection(db, 'facilities'))
-        if (!active) return
-        let loadedFacilities = facilitySnapshot.docs.map((item) => ({
-          id: item.id,
-          ...item.data(),
-        }))
-        const isAdmin = userProfile?.role?.toLowerCase() === 'admin'
-        const regionId = userProfile?.regionId || userProfile?.region
-        let allowedIds = null
-        if (!isAdmin) {
-          const matchingFacilityIds = regionId
-            ? loadedFacilities
-                .filter((facility) => facility.regionId === regionId || facility.region === regionId)
-                .map((facility) => facility.id)
-            : []
-          const allowedFacilityIds = matchingFacilityIds.length
-            ? matchingFacilityIds
-            : userProfile?.facilityId
-              ? [userProfile.facilityId]
-              : []
-          allowedIds = allowedFacilityIds
-          const patientSnapshots = []
-          for (let index = 0; index < allowedFacilityIds.length; index += 30) {
-            const facilityIds = allowedFacilityIds.slice(index, index + 30)
-            const patientQuery = facilityIds.length === 1
-              ? query(collection(db, 'patients'), where('facilityId', '==', facilityIds[0]))
-              : query(collection(db, 'patients'), where('facilityId', 'in', facilityIds))
-            patientSnapshots.push(getDocs(patientQuery))
-          }
-          const snapshotGroups = await Promise.all(patientSnapshots)
-          let loadedPatients = snapshotGroups.flatMap((snapshot) =>
-            snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
-          )
-          loadedFacilities = loadedFacilities.filter((facility) => allowedIds.includes(facility.id))
-          const patientActivity = loadedPatients.map((patient) => {
-            const date = dateFor(patient)
-            return date
-              ? {
-                  id: patient.id,
-                  action: patient.status?.toLowerCase() === 'draft'
-                    ? 'Enlistment draft created'
-                    : 'Enlistment successfully updated',
-                  user: patient.facility || 'System',
-                  timestamp: date,
-                }
-              : null
-          }).filter(Boolean)
-          if (!active) return
-          setFacilities(loadedFacilities)
-          setPatients(loadedPatients)
-          setActivity(patientActivity
-            .sort((a, b) => b.timestamp - a.timestamp)
-            .slice(0, 10))
-          return
-        }
-
-        const syncSnapshotPromise = getDocs(collection(db, 'sync_logs')).catch((error) => {
-          console.error('Failed to load dashboard sync activity:', error)
-          toast.error(`Unable to load synchronization activity: ${error.message}`)
-          return null
-        })
-        const [patientSnapshot, syncSnapshot] = await Promise.all([
-          getDocs(collection(db, 'patients')),
-          syncSnapshotPromise,
+        const isAdmin = isAdminUser(userProfile)
+        const facilitiesPromise = isAdmin
+          ? getDocs(collection(db, 'facilities'))
+          : Promise.resolve(null)
+        const [facilitySnapshot, patientSnapshot, syncSnapshot] = await Promise.all([
+          facilitiesPromise,
+          getDocs(patientsQuery),
+          getDocs(syncLogsQuery),
         ])
+        if (!active) return
+        const loadedFacilities = isAdmin
+          ? facilitySnapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
+          : userProfile?.facilityId
+            ? [{ id: userProfile.facilityId, name: userProfile.facility || userProfile.facilityId }]
+            : []
         const loadedPatients = patientSnapshot.docs.map((item) => ({
           id: item.id,
           ...item.data(),
@@ -198,7 +162,7 @@ export default function Dashboard() {
               }
             : null
         }).filter(Boolean)
-        const syncActivity = (syncSnapshot?.docs || []).map((item) => {
+        const syncActivity = syncSnapshot.docs.map((item) => {
           const data = item.data()
           const raw = data.timestamp || data.createdAt
           const timestamp = parseDate(raw)
@@ -231,7 +195,7 @@ export default function Dashboard() {
 
     loadDashboard()
     return () => { active = false }
-  }, [userProfile?.facilityId, userProfile?.region, userProfile?.regionId, userProfile?.role])
+  }, [currentUser?.uid, patientsQuery, syncLogsQuery, userProfile])
 
   const scopedPatients = useMemo(
     () => patients.filter((patient) => {
@@ -313,34 +277,45 @@ export default function Dashboard() {
   const userName = userProfile?.name || currentUser?.displayName || currentUser?.email || 'User'
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6">
       <PageHeader title="System Dashboard" subtitle="Regional overview and analytics" />
-      <Card>
-        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
-          <Avatar className="h-14 w-14">
-            <AvatarFallback>{initials(userName)}</AvatarFallback>
-          </Avatar>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm text-muted-foreground">Welcome back</p>
-            <p className="truncate text-xl font-bold text-foreground">{userName}</p>
-            <p className="text-sm text-muted-foreground">{userProfile?.role || 'User'} · {facilityName}</p>
-          </div>
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-            <Building2 className="h-4 w-4 text-primary" />
-            Regional system overview
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-12 gap-6">
+        <Card className="col-span-12 rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 lg:col-span-4">
+          <CardContent className="flex min-w-0 items-center gap-3 p-5">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-600 text-lg font-bold text-white">
+              {initials(userName)}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="whitespace-nowrap text-sm text-slate-500 dark:text-slate-400">Welcome back</p>
+              <h3 className="truncate text-lg font-semibold text-slate-900 dark:text-white">{userName}</h3>
+              <p className="truncate text-sm text-slate-500 dark:text-slate-400">
+                {userProfile?.role || 'User'} · {userProfile?.facility || userProfile?.facilityId || 'Assigned facility'}
+              </p>
+            </div>
+            <div className="shrink-0">
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-slate-200 bg-slate-100 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                <FileText className="h-3.5 w-3.5 shrink-0" />
+                Regional system overview
+              </span>
+            </div>
+          </CardContent>
+        </Card>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {loading
-          ? summary.map((item) => <Card key={item.title} className="p-5"><Skeleton className="h-24 w-full" /></Card>)
-          : summary.map((item) => <StatCard key={item.title} {...item} />)}
-      </div>
+        {summary.map((item) => (
+          <div key={item.title} className="col-span-12 lg:col-span-2">
+            {loading
+              ? <Card className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><Skeleton className="h-24 w-full" /></Card>
+              : <StatCard {...item} />}
+          </div>
+        ))}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <ActivityFeed activities={selectedActivity} loading={loading} />
+        <ActivityFeed
+          activities={selectedActivity}
+          loading={loading}
+          className="col-span-12 lg:col-span-4"
+        />
         <ChartContainer
+          className="col-span-12 lg:col-span-8"
           title="Weekly Registration"
           description="Daily registrations for the selected week"
           actions={(
@@ -379,10 +354,7 @@ export default function Dashboard() {
             </LineChart>
           </ResponsiveContainer>
         </ChartContainer>
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <Card>
+        <Card className="col-span-12 rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 lg:col-span-4">
           <CardHeader><CardTitle className="text-base">Most Active Facility</CardTitle></CardHeader>
           <CardContent>
             {loading ? <Skeleton className="h-20 w-full" /> : activeFacility ? (
@@ -398,7 +370,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <ChartContainer title={`Monthly Registration (${year})`} description="Registered individuals by month" loading={loading} empty={!loading && monthlyData.every((item) => item.registrations === 0)}>
+        <ChartContainer className="col-span-12 lg:col-span-5" title={`Monthly Registration (${year})`} description="Registered individuals by month" loading={loading} empty={!loading && monthlyData.every((item) => item.registrations === 0)}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={monthlyData} margin={{ top: 8, right: 8, left: -24, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -410,7 +382,7 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </ChartContainer>
 
-        <ChartContainer title="Gender Distribution" description="Registered individuals" loading={loading} empty={!loading && genderData.every((item) => item.value === 0)}>
+        <ChartContainer className="col-span-12 lg:col-span-3" title="Gender Distribution" description="Registered individuals" loading={loading} empty={!loading && genderData.every((item) => item.value === 0)}>
           <div className="flex h-full items-center">
             <div className="h-full min-h-48 flex-1">
               <ResponsiveContainer width="100%" height="100%">
@@ -433,10 +405,10 @@ export default function Dashboard() {
             </div>
           </div>
         </ChartContainer>
+        <p className="col-span-12 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <CalendarDays className="h-3.5 w-3.5" /> Aggregated registration data for {year}
+        </p>
       </div>
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <CalendarDays className="h-3.5 w-3.5" /> Aggregated registration data for {year}
-      </p>
     </div>
   )
 }

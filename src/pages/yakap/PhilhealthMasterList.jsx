@@ -15,6 +15,7 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAuth } from '../../context/AuthContext'
 import {
   collection,
   onSnapshot,
@@ -41,11 +42,13 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '../../components/ui/dropdown-menu'
-import { mockPhilhealthList } from '../../data/mockData'
+import { isAdminUser } from '../../lib/facilityAccess'
 import { dataGridDarkSx } from './yakapStyles'
 import PageHeader from '../../components/layout/PageHeader'
 
 export default function PhilhealthMasterList() {
+  const { currentUser, userProfile } = useAuth()
+  const isAdmin = isAdminUser(userProfile)
   const [list, setList] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [selectedIds, setSelectedIds] = useState([])
@@ -56,6 +59,12 @@ export default function PhilhealthMasterList() {
 
   // 1. Real-time Subscription to philhealth_members
   useEffect(() => {
+    if (!isAdmin) {
+      setList([])
+      setIsLoading(false)
+      return undefined
+    }
+
     setIsLoading(true)
     const unsubscribe = onSnapshot(
       collection(db, 'philhealth_members'),
@@ -83,20 +92,20 @@ export default function PhilhealthMasterList() {
           })
           setList(items)
         } else {
-          setList(mockPhilhealthList)
+          setList([])
         }
         setIsLoading(false)
       },
       (error) => {
         console.error('Error fetching philhealth_members:', error)
         toast.error('Failed to connect to PhilHealth Master List: ' + error.message)
-        setList(mockPhilhealthList)
+        setList([])
         setIsLoading(false)
       }
     )
 
     return () => unsubscribe()
-  }, [])
+  }, [isAdmin])
 
   // Filtered rows
   const filteredList = useMemo(() => {
@@ -147,11 +156,13 @@ export default function PhilhealthMasterList() {
 
       // Add audit sync log
       await addDoc(collection(db, 'sync_logs'), {
-        userId: 'admin',
+        userId: currentUser?.uid,
+        ...(userProfile?.facilityId ? { facilityId: userProfile.facilityId } : {}),
         timestamp: new Date().toISOString(),
         recordsSynced: count,
         status: 'success',
-      }).catch(() => {})
+        source: 'philhealth-master-list',
+      })
 
       // Update local state if items weren't in Firestore yet
       setList((prev) =>
@@ -307,6 +318,21 @@ export default function PhilhealthMasterList() {
 
   const totalUploaded = list.filter((i) => i.uploaded).length
   const totalPending = list.length - totalUploaded
+
+  if (!isAdmin) {
+    return (
+      <div className="space-y-5">
+        <PageHeader
+          title="PhilHealth Master List"
+          subtitle="Access is restricted to administrators."
+          icon={Users}
+        />
+        <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+          The PhilHealth master list is global data and is only available to Admin users.
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-5">

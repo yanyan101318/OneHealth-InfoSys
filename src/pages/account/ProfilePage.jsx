@@ -73,7 +73,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6">
       <PageHeader
         title="User Profile"
         subtitle="Manage your personal credentials, facility assignment, and contact details"

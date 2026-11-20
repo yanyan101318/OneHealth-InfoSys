@@ -13,7 +13,6 @@ import {
   Users,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import useAppStore from '../../store/useAppStore'
 import { useAuth } from '../../context/AuthContext'
 
 /**
@@ -73,8 +72,8 @@ function NavItem({ item, collapsed }) {
           className={cn(
             'w-full flex items-center rounded-lg text-sm font-medium transition-colors',
             isParentActive
-              ? 'bg-blue-600/20 text-blue-400'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+              ? 'bg-blue-50 text-blue-700 dark:bg-blue-600/20 dark:text-blue-400'
+              : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'
           )}
         >
           {/* Clicking Yakap navigates directly to /yakap (redirects to /yakap/registered) */}
@@ -83,12 +82,12 @@ function NavItem({ item, collapsed }) {
             onClick={() => setExpanded(true)}
             className="flex-1 flex items-center gap-3 px-3 py-2.5"
           >
-            <item.icon className="w-5 h-5 flex-shrink-0" />
+            <item.icon className="w-5 h-5 flex-shrink-0 text-slate-500 dark:text-slate-400" />
             {!collapsed && (
               <>
-                <span className="flex-1 text-left font-semibold">{item.label}</span>
+                <span className="flex-1 whitespace-nowrap text-left font-semibold">{item.label}</span>
                 {item.badge && (
-                  <span className="bg-slate-800 text-slate-300 border border-slate-700 text-xs px-1.5 py-0.5 rounded-full font-mono">
+                  <span className="whitespace-nowrap rounded-full border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                     {item.badge}
                   </span>
                 )}
@@ -103,7 +102,7 @@ function NavItem({ item, collapsed }) {
                 e.stopPropagation()
                 setExpanded((prev) => !prev)
               }}
-              className="p-2 text-slate-400 hover:text-white transition-colors"
+              className="p-2 text-slate-500 transition-colors hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
               aria-label="Toggle sub-menu"
             >
               <ChevronRight
@@ -115,7 +114,7 @@ function NavItem({ item, collapsed }) {
 
         {/* Sub-items (Registered, PhilHealth List, Member Check, Upload, Reports) */}
         {!collapsed && open && (
-          <div className="mt-1 ml-9 space-y-0.5 border-l border-slate-700 pl-3">
+          <div className="mt-1 ml-9 space-y-0.5 border-l border-slate-200 pl-3 dark:border-slate-700">
             {item.children.map((child) => (
               <NavLink
                 key={child.to}
@@ -125,12 +124,12 @@ function NavItem({ item, collapsed }) {
                     'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors',
                     isActive
                       ? 'bg-blue-600 text-white font-medium shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100'
                   )
                 }
               >
                 {child.icon && <child.icon className="w-4 h-4 flex-shrink-0" />}
-                <span>{child.label}</span>
+                <span className="whitespace-nowrap">{child.label}</span>
               </NavLink>
             ))}
           </div>
@@ -149,7 +148,7 @@ function NavItem({ item, collapsed }) {
                     'flex items-center justify-center w-10 h-9 mx-auto rounded-lg text-sm transition-colors',
                     isActive
                       ? 'bg-blue-600 text-white'
-                      : 'text-slate-500 hover:text-slate-200 hover:bg-slate-700/50'
+                      : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-slate-200'
                   )
                 }
               >
@@ -174,35 +173,29 @@ function NavItem({ item, collapsed }) {
           collapsed && 'justify-center w-10 h-10 mx-auto px-0',
           isActive
             ? 'bg-blue-600 text-white shadow-sm font-semibold'
-            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'
+            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100'
         )
       }
     >
-      <item.icon className="w-5 h-5 flex-shrink-0" />
-      {!collapsed && <span>{item.label}</span>}
+      <item.icon className="w-5 h-5 flex-shrink-0 text-slate-500 dark:text-slate-400" />
+      {!collapsed && <span className="whitespace-nowrap">{item.label}</span>}
     </NavLink>
   )
 }
 
 export default function Sidebar() {
-  const { sidebarOpen } = useAppStore()
   const { userProfile } = useAuth()
-  const collapsed = !sidebarOpen
+  const collapsed = false
   const isAdmin = userProfile?.role?.toLowerCase() === 'admin'
 
   const visibleNavItems = navItems.filter((item) => !item.adminOnly || isAdmin)
 
   return (
-    <>
-      {/* Mobile backdrop */}
-      {!collapsed && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" />}
-
-      <aside
-        className={cn(
-          'fixed top-16 left-0 bottom-0 z-40 bg-white dark:bg-[#0f172a] border-r border-slate-200 dark:border-slate-700/50 transition-all duration-300 overflow-hidden flex flex-col',
-          collapsed ? 'w-14' : 'w-64'
-        )}
-      >
+    <aside
+      className={cn(
+        'relative z-40 flex h-screen w-64 min-w-[16rem] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white pt-16 dark:border-slate-800 dark:bg-slate-900'
+      )}
+    >
         {/* Navigation list */}
         <nav className="flex-1 px-2 space-y-1.5 overflow-y-auto py-3">
           {visibleNavItems.map((item) => (
@@ -211,13 +204,10 @@ export default function Sidebar() {
         </nav>
 
         {/* Footer */}
-        {!collapsed && (
-          <div className="px-4 py-3 border-t border-slate-200 dark:border-slate-700/50 shrink-0">
-            <p className="text-xs text-slate-500 font-medium">OneHealth InfoSys</p>
-            <p className="text-xs text-slate-400 dark:text-slate-600">v2.3.4 · Build 2024.11</p>
-          </div>
-        )}
-      </aside>
-    </>
+        <div className="mt-auto shrink-0 border-t border-slate-200 px-4 py-3 dark:border-slate-700/50">
+          <p className="whitespace-nowrap text-xs font-medium text-slate-700 dark:text-slate-300">OneHealth InfoSys</p>
+          <p className="whitespace-nowrap text-xs text-slate-400 dark:text-slate-500">v2.3.4 · Build 2024.11</p>
+        </div>
+    </aside>
   )
 }

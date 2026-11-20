@@ -51,7 +51,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
           <Shield className="w-6 h-6 text-blue-400" />

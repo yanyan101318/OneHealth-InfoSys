@@ -91,7 +91,7 @@ export default function ChangePasswordPage() {
   }
 
   return (
-    <div className="max-w-xl mx-auto space-y-6">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6">
       {/* Forced-change banner for new users */}
       {requiresPasswordChange && (
         <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-50 border border-blue-200 dark:bg-slate-800 dark:border-slate-600">

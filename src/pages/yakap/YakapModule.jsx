@@ -1,13 +1,15 @@
+import { lazy } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import RegisteredYakap from './RegisteredYakap'
-import PhilhealthMasterList from './PhilhealthMasterList'
-import MemberCheck from './MemberCheck'
-import UploadPage from './UploadPage'
-import ReportsPage from './ReportsPage'
+
+const RegisteredYakap = lazy(() => import('./RegisteredYakap'))
+const PhilhealthMasterList = lazy(() => import('./PhilhealthMasterList'))
+const MemberCheck = lazy(() => import('./MemberCheck'))
+const UploadPage = lazy(() => import('./UploadPage'))
+const ReportsPage = lazy(() => import('./ReportsPage'))
 
 export default function YakapModule() {
   return (
-    <div className="max-w-7xl">
+    <div className="w-full max-w-none">
       <div>
         <Routes>
           {/* /yakap automatically redirects to /yakap/registered */}

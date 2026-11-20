@@ -18,6 +18,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useNotifications } from '../../context/NotificationContext'
 import { useTheme } from '../../context/ThemeContext'
 import { db } from '../../lib/firebase'
+import { getFacilityFilter, isAdminUser } from '../../lib/facilityAccess'
 
 const preferenceOptions = [
   {
@@ -75,15 +76,8 @@ export default function SettingsPage() {
       return
     }
 
-    const role = String(userProfile?.role || '').toLowerCase()
-    const canSyncAllFacilities = ['admin', 'administrator', 'physician'].includes(role)
-    const facilityIds = [
-      ...new Set([
-        ...(userProfile?.facilityId ? [userProfile.facilityId] : []),
-        ...(Array.isArray(userProfile?.facilityIds) ? userProfile.facilityIds : []),
-      ]),
-    ]
-    if (!canSyncAllFacilities && facilityIds.length === 0) {
+    const canSyncAllFacilities = isAdminUser(userProfile)
+    if (!canSyncAllFacilities && !userProfile?.facilityId) {
       toast.error('No assigned facility is available for synchronization.')
       return
     }
@@ -91,23 +85,15 @@ export default function SettingsPage() {
     setIsSyncing(true)
     try {
       const patientsRef = collection(db, 'patients')
-      const facilityChunks = []
-      for (let index = 0; index < facilityIds.length; index += 30) {
-        facilityChunks.push(facilityIds.slice(index, index + 30))
-      }
+      const facilityFilter = getFacilityFilter(userProfile)
       const patientQueries = canSyncAllFacilities
         ? [query(patientsRef, where('synced', '==', false))]
-        : facilityChunks.map((facilityChunk) => query(
-            patientsRef,
-            where('facilityId', 'in', facilityChunk)
-          ))
+        : [query(patientsRef, facilityFilter, where('synced', '==', false))]
       const snapshots = await Promise.all(patientQueries.map((patientQuery) => getDocs(patientQuery)))
       const scopedRecords = [
         ...new Map(snapshots.flatMap((snapshot) => snapshot.docs).map((patient) => [patient.id, patient])).values(),
       ]
-      const pendingRecords = canSyncAllFacilities
-        ? scopedRecords
-        : scopedRecords.filter((patient) => patient.data().synced === false)
+      const pendingRecords = scopedRecords.filter((patient) => patient.data().synced === false)
 
       for (let offset = 0; offset < pendingRecords.length; offset += 499) {
         const batch = writeBatch(db)
@@ -119,7 +105,7 @@ export default function SettingsPage() {
 
       await addDoc(collection(db, 'sync_logs'), {
         userId: currentUser.uid,
-        facilityIds: canSyncAllFacilities ? [] : facilityIds,
+        ...(userProfile?.facilityId ? { facilityId: userProfile.facilityId } : {}),
         timestamp: new Date().toISOString(),
         recordsSynced: pendingRecords.length,
         status: 'success',

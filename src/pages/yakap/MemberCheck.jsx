@@ -10,117 +10,20 @@ import {
   UserPlus,
   RefreshCw,
   FileBadge,
-  Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { collection, query, where, getDocs } from 'firebase/firestore'
 import { db } from '../../lib/firebase'
+import { useAuth } from '../../context/AuthContext'
+import { getFacilityFilter, isAdminUser } from '../../lib/facilityAccess'
 import { Card, CardContent } from '../../components/ui/card'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
-import { Badge } from '../../components/ui/badge'
 import PageHeader from '../../components/layout/PageHeader'
 
-const samplePins = [
-  { pin: '040239102831', label: 'Maria Santos (Active - Direct Contributor)' },
-  { pin: '040819203819', label: 'Jose Dela Cruz (Active - Indigent / 4Ps)' },
-  { pin: '040552194821', label: 'Ana Flores (Inactive - Payment Lapsed)' },
-]
-
-const mockResultsDatabase = {
-  '040239102831': {
-    pin: '040239102831',
-    name: 'Santos, Maria Lourdes B.',
-    birthdate: '1984-06-15',
-    gender: 'Female',
-    civilStatus: 'Married',
-    membershipType: 'Direct Contributor - Employed (Private)',
-    category: 'Formal Economy Sector',
-    status: 'Active',
-    coverage: 'Comprehensive Inpatient, Outpatient, PhilHealth Konsulta & Primary Care',
-    validUntil: 'December 31, 2025',
-    registeredFacility: 'Barangay Health Center - Poblacion',
-    employer: 'Megasoft Health Solutions Inc.',
-    lastPaymentDate: '2024-10-25',
-    dependents: [
-      {
-        id: 1,
-        pin: '040982716254',
-        name: 'Santos, Joaquin B.',
-        relation: 'Child',
-        birthdate: '2015-08-12',
-        status: 'Active',
-      },
-      {
-        id: 2,
-        pin: '040982716255',
-        name: 'Santos, Clara B.',
-        relation: 'Child',
-        birthdate: '2018-03-22',
-        status: 'Active',
-      },
-      {
-        id: 3,
-        pin: '040982716256',
-        name: 'Santos, Roberto C.',
-        relation: 'Spouse',
-        birthdate: '1982-11-04',
-        status: 'Active',
-      },
-    ],
-  },
-  '040819203819': {
-    pin: '040819203819',
-    name: 'Dela Cruz, Jose Antonio M.',
-    birthdate: '1976-02-19',
-    gender: 'Male',
-    civilStatus: 'Married',
-    membershipType: 'Indirect Contributor - Indigent / NHTS-PR (4Ps)',
-    category: 'National Government Subsidized',
-    status: 'Active',
-    coverage: 'Full No-Balance-Billing (NBB) Universal Health Care & Yakap Primary Care',
-    validUntil: 'December 31, 2024',
-    registeredFacility: 'RHU Main Health Center',
-    employer: 'N/A (DSWD Sponsored)',
-    lastPaymentDate: '2024-01-01',
-    dependents: [
-      {
-        id: 1,
-        pin: '040182746592',
-        name: 'Dela Cruz, Juan Carlo M.',
-        relation: 'Child',
-        birthdate: '2012-09-05',
-        status: 'Active',
-      },
-      {
-        id: 2,
-        pin: '040182746593',
-        name: 'Dela Cruz, Elena M.',
-        relation: 'Spouse',
-        birthdate: '1979-05-14',
-        status: 'Active',
-      },
-    ],
-  },
-  '040552194821': {
-    pin: '040552194821',
-    name: 'Flores, Ana Patricia G.',
-    birthdate: '1992-11-28',
-    gender: 'Female',
-    civilStatus: 'Single',
-    membershipType: 'Direct Contributor - Individual Paying (Self-Employed)',
-    category: 'Informal Economy',
-    status: 'Inactive',
-    coverage: 'Basic Inpatient Only (Suspended Outpatient Benefits)',
-    validUntil: 'June 30, 2024 (Lapsed)',
-    registeredFacility: 'BHC San Isidro',
-    employer: 'Self-employed',
-    lastPaymentDate: '2024-03-15',
-    dependents: [],
-  },
-}
-
 export default function MemberCheck() {
+  const { userProfile } = useAuth()
+  const isAdmin = isAdminUser(userProfile)
   const [pinInput, setPinInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [memberResult, setMemberResult] = useState(null)
@@ -136,117 +39,73 @@ export default function MemberCheck() {
 
     setIsLoading(true)
     setHasSearched(true)
+    setMemberResult(null)
 
     try {
-      // 1. Try querying Firestore philhealth_members first
-      const qMembers = query(
-        collection(db, 'philhealth_members'),
-        where('registeredPin', '==', targetPin)
-      )
-      const memberSnap = await getDocs(qMembers)
+      if (isAdmin) {
+        const memberSnap = await getDocs(query(
+          collection(db, 'philhealth_members'),
+          where('registeredPin', '==', targetPin)
+        ))
 
-      if (!memberSnap.empty) {
-        const d = memberSnap.docs[0].data()
-        const found = {
-          pin: d.registeredPin || targetPin,
-          name: `${d.lastName}, ${d.firstName} ${d.middleName ? d.middleName + '.' : ''}`,
-          birthdate: d.dateOfBirth || '1985-04-12',
-          gender: d.sex || 'Female',
-          civilStatus: 'Married',
-          membershipType: `${d.clientType || 'Principal'} Member`,
-          category: 'Universal Health Care Member',
-          status: 'Active',
-          coverage: 'Comprehensive Inpatient, Outpatient, PhilHealth Konsulta & Yakap',
-          validUntil: d.effectivityYear ? `December 31, ${d.effectivityYear}` : 'December 31, 2025',
-          registeredFacility: 'Barangay Health Center - Poblacion',
-          employer: 'Verified in Firestore Database',
-          lastPaymentDate: d.registeredDate || '2024-01-10',
-          dependents: [],
+        if (!memberSnap.empty) {
+          const d = memberSnap.docs[0].data()
+          setMemberResult({
+            pin: d.registeredPin || targetPin,
+            name: `${d.lastName}, ${d.firstName} ${d.middleName ? d.middleName + '.' : ''}`,
+            birthdate: d.dateOfBirth || '',
+            gender: d.sex || '',
+            civilStatus: 'Registered',
+            membershipType: `${d.clientType || 'Principal'} Member`,
+            category: 'PhilHealth member record',
+            status: d.status || 'Registered',
+            coverage: 'Confirm eligibility with the official PhilHealth system.',
+            validUntil: d.effectivityYear ? `December 31, ${d.effectivityYear}` : 'Not specified',
+            registeredFacility: d.facility || 'Not specified',
+            employer: 'Not available',
+            lastPaymentDate: d.registeredDate || 'Not available',
+            dependents: [],
+          })
+          toast.success(`Found a PhilHealth member record for PIN: ${targetPin}`)
+          return
         }
-        setMemberResult(found)
-        toast.success(`Verified record in Firestore for PIN: ${targetPin}`)
-        setIsLoading(false)
-        return
       }
 
-      // 2. Try querying Firestore patients
-      const qPatients = query(
-        collection(db, 'patients'),
-        where('memberPin', '==', targetPin)
-      )
+      const patientsCollection = collection(db, 'patients')
+      const facilityFilter = getFacilityFilter(userProfile)
+      const patientConstraints = [where('memberPin', '==', targetPin)]
+      if (facilityFilter) patientConstraints.push(facilityFilter)
+      const qPatients = query(patientsCollection, ...patientConstraints)
       const patientSnap = await getDocs(qPatients)
 
       if (!patientSnap.empty) {
         const d = patientSnap.docs[0].data()
-        const found = {
+        setMemberResult({
           pin: d.memberPin || targetPin,
           name: d.name || `${d.lastName}, ${d.firstName}`,
-          birthdate: d.birthdate || '1985-04-12',
-          gender: d.gender || 'Female',
+          birthdate: d.birthdate || '',
+          gender: d.gender || '',
           civilStatus: 'Registered',
           membershipType: `Yakap ${d.clientType || 'Regular'} Beneficiary`,
           category: 'DOH/PhilHealth Yakap Primary Care',
-          status: d.status || 'Active',
-          coverage: 'Full Outpatient Consultation, Screenings & Primary Drugs',
-          validUntil: 'December 31, 2025',
-          registeredFacility: d.facility || 'Barangay Health Center - Poblacion',
+          status: d.status || 'Registered',
+          coverage: 'Yakap patient record; confirm eligibility with the official system.',
+          validUntil: 'Not specified',
+          registeredFacility: d.facility || d.facilityId || 'Not specified',
           employer: 'N/A',
-          lastPaymentDate: d.enlistmentDate || '2024-01-15',
+          lastPaymentDate: d.enlistmentDate || 'Not available',
           dependents: [],
-        }
-        setMemberResult(found)
+        })
         toast.success(`Verified patient in Firestore for PIN: ${targetPin}`)
-        setIsLoading(false)
-        return
+      } else {
+        toast.info('No matching record was found in the records available to your account.')
       }
     } catch (err) {
-      console.warn('Firestore query error in MemberCheck, falling back:', err)
-    }
-
-    // 3. Fallback to mock / generated database
-    setTimeout(() => {
+      console.error('Firestore query error in MemberCheck:', err)
+      toast.error(`Unable to check member status: ${err.message}`)
+    } finally {
       setIsLoading(false)
-      const found = mockResultsDatabase[targetPin]
-
-      if (found) {
-        setMemberResult(found)
-        toast.success(`Verification complete for PIN: ${targetPin}`)
-      } else {
-        // Fallback realistic generated result
-        const generated = {
-          pin: targetPin.padStart(12, '0').slice(-12),
-          name: 'Ramos, Eduardo Miguel P.',
-          birthdate: '1988-04-10',
-          gender: 'Male',
-          civilStatus: 'Single',
-          membershipType: 'Direct Contributor - Informal Economy',
-          category: 'Individually Paying Member',
-          status: 'Active',
-          coverage: 'Standard Inpatient & Primary Konsulta Package',
-          validUntil: 'December 31, 2025',
-          registeredFacility: 'BHC Poblacion',
-          employer: 'Self-Employed Freelancer',
-          lastPaymentDate: '2024-09-30',
-          dependents: [
-            {
-              id: 1,
-              pin: '040991827364',
-              name: 'Ramos, Teresa P.',
-              relation: 'Parent',
-              birthdate: '1959-10-02',
-              status: 'Active',
-            },
-          ],
-        }
-        setMemberResult(generated)
-        toast.success(`Verified record for PIN: ${targetPin}`)
-      }
-    }, 450)
-  }
-
-  const handleSampleClick = (pin) => {
-    setPinInput(pin)
-    handleSearch(pin)
+    }
   }
 
   const handlePrintSlip = () => {
@@ -309,23 +168,6 @@ export default function MemberCheck() {
             </div>
           </div>
 
-          {/* Quick test buttons */}
-          <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-slate-600 dark:text-slate-400 font-medium flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              Quick Test PINs:
-            </span>
-            {samplePins.map((item) => (
-              <button
-                key={item.pin}
-                type="button"
-                onClick={() => handleSampleClick(item.pin)}
-                className="text-xs bg-slate-50 hover:bg-blue-50/50 text-blue-700 border border-slate-200 hover:border-blue-300 px-2.5 py-1 rounded transition-colors dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-blue-300 dark:border-slate-700 dark:hover:border-blue-500/50"
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
         </CardContent>
       </Card>
 

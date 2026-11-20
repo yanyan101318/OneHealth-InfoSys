@@ -1,32 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Building2, CheckCircle2, Clock3, FileText, House, Stethoscope, UserRound } from 'lucide-react'
 import { CartesianGrid, Line, LineChart, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore'
+import { collection, getDocs, onSnapshot } from 'firebase/firestore'
 import { toast } from 'sonner'
 import { db } from '../../lib/firebase'
+import { isAdminUser } from '../../lib/facilityAccess'
+import { useFacilityFilter } from '../../hooks/useFacilityFilter'
 import { useAuth } from '../../context/AuthContext'
 import { Card, CardContent } from '../../components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select'
 import { Skeleton } from '../../components/ui/skeleton'
 import { StatCard, ChartContainer } from '../../components/dashboard/DashboardWidgets'
 import PageHeader from '../../components/layout/PageHeader'
-import { facilitiesData } from '../../data/mockData'
 import useAppStore from '../../store/useAppStore'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const YEARS = Array.from({ length: 6 }, (_, index) => String(new Date().getFullYear() - index))
-
-function getAllowedFacilityIds(profile, isAdmin) {
-  if (isAdmin) return null
-  const assigned = [
-    profile?.facilityId,
-    ...(Array.isArray(profile?.facilityIds) ? profile.facilityIds : []),
-    ...(Array.isArray(profile?.assignedFacilities)
-      ? profile.assignedFacilities.map((facility) => typeof facility === 'string' ? facility : facility?.id)
-      : []),
-  ].filter(Boolean)
-  return [...new Set(assigned)]
-}
 
 function asDate(value) {
   if (!value) return null
@@ -42,15 +31,16 @@ function asDate(value) {
 export default function YakapDashboard() {
   const { userProfile } = useAuth()
   const { selectedYear, setSelectedYear } = useAppStore()
-  const isAdmin = userProfile?.role?.toLowerCase() === 'admin'
-  const allowedIds = getAllowedFacilityIds(userProfile, isAdmin)
+  const isAdmin = isAdminUser(userProfile)
   const [facilities, setFacilities] = useState([])
-  const [selectedFacility, setSelectedFacility] = useState('')
+  const [selectedFacility, setSelectedFacility] = useState(isAdmin ? 'all' : userProfile?.facilityId || '')
   const [year, setYear] = useState(selectedYear || String(new Date().getFullYear()))
   const [patients, setPatients] = useState([])
   const [loadingFacilities, setLoadingFacilities] = useState(true)
   const [loadingPatients, setLoadingPatients] = useState(true)
   const [isOnline, setIsOnline] = useState(() => navigator.onLine)
+  const patientsCollection = useMemo(() => collection(db, 'patients'), [])
+  const patientQuery = useFacilityFilter(patientsCollection, selectedFacility)
 
   useEffect(() => {
     const updateStatus = () => setIsOnline(navigator.onLine)
@@ -65,20 +55,24 @@ export default function YakapDashboard() {
   useEffect(() => {
     let active = true
     async function loadFacilities() {
+      if (!isAdmin) {
+        const assignedFacility = userProfile?.facilityId
+          ? [{ id: userProfile.facilityId, name: userProfile.facility || userProfile.facilityId }]
+          : []
+        setFacilities(assignedFacility)
+        setSelectedFacility(userProfile?.facilityId || '')
+        setLoadingFacilities(false)
+        return
+      }
+
       try {
         const snapshot = await getDocs(collection(db, 'facilities'))
-        const records = snapshot.empty
-          ? facilitiesData.filter((facility) => facility.id !== 'all')
-          : snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
-        const available = allowedIds === null
-          ? records
-          : records.filter((facility) => allowedIds.includes(facility.id))
+        const available = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
         if (!active) return
         setFacilities(available)
         setSelectedFacility((current) => {
-          if (current && available.some((facility) => facility.id === current)) return current
-          const preferred = userProfile?.facilityId
-          return available.find((facility) => facility.id === preferred)?.id || available[0]?.id || ''
+          if (current === 'all' || available.some((facility) => facility.id === current)) return current
+          return 'all'
         })
       } catch (error) {
         if (!active) return
@@ -91,16 +85,15 @@ export default function YakapDashboard() {
     }
     loadFacilities()
     return () => { active = false }
-  }, [userProfile?.facilityId, allowedIds?.join('|')])
+  }, [isAdmin, userProfile?.facilityId, userProfile?.facility])
 
   useEffect(() => {
-    if (!selectedFacility) {
+    if (!patientQuery || !selectedFacility || (!isAdmin && !userProfile?.facilityId)) {
       setPatients([])
       setLoadingPatients(false)
       return undefined
     }
     setLoadingPatients(true)
-    const patientQuery = query(collection(db, 'patients'), where('facilityId', '==', selectedFacility))
     const unsubscribe = onSnapshot(
       patientQuery,
       (snapshot) => {
@@ -115,11 +108,13 @@ export default function YakapDashboard() {
       }
     )
     return () => unsubscribe()
-  }, [selectedFacility])
+  }, [isAdmin, patientQuery, selectedFacility, userProfile?.facilityId])
 
-  const facilityName = facilities.find((facility) => facility.id === selectedFacility)?.name
-    || userProfile?.facility
-    || 'Selected facility'
+  const facilityName = selectedFacility === 'all'
+    ? 'All Facilities'
+    : facilities.find((facility) => facility.id === selectedFacility)?.name
+      || userProfile?.facility
+      || 'Selected facility'
   const yearlyPatients = useMemo(() => patients.filter((patient) => {
     const date = asDate(patient.enlistmentDate || patient.createdAt)
     return date && String(date.getFullYear()) === year
@@ -172,19 +167,26 @@ export default function YakapDashboard() {
   const loading = loadingFacilities || loadingPatients
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6">
       <PageHeader title="Yakap Dashboard" subtitle="Facility-level registration and service monitoring" />
       <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <div className="rounded-lg bg-primary/10 p-2.5 text-primary"><Building2 className="h-5 w-5" /></div>
           <div className="w-full min-w-0 sm:w-80">
             <p className="mb-1 text-xs font-medium text-muted-foreground">Facility</p>
-            <Select value={selectedFacility} onValueChange={setSelectedFacility} disabled={!facilities.length}>
-              <SelectTrigger className="font-semibold"><SelectValue placeholder="Select an assigned facility" /></SelectTrigger>
-              <SelectContent>
-                {facilities.map((facility) => <SelectItem key={facility.id} value={facility.id}>{facility.name || facility.id}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            {isAdmin ? (
+              <Select value={selectedFacility} onValueChange={setSelectedFacility} disabled={!facilities.length}>
+                <SelectTrigger className="font-semibold"><SelectValue placeholder="Select a facility" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Facilities</SelectItem>
+                  {facilities.map((facility) => <SelectItem key={facility.id} value={facility.id}>{facility.name || facility.id}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="rounded-md border border-border bg-background px-3 py-2 text-sm font-semibold text-foreground">
+                {userProfile?.facility || 'No assigned facility'}
+              </div>
+            )}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">

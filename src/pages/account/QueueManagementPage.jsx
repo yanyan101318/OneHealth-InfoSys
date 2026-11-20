@@ -10,21 +10,19 @@ import {
   SkipForward,
   RotateCcw,
   Plus,
-  Building2,
-  Users,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   collection,
-  query,
   onSnapshot,
   doc,
+  serverTimestamp,
   updateDoc,
-  deleteDoc,
 } from 'firebase/firestore'
 import { db } from '../../lib/firebase'
 import { useAuth } from '../../context/AuthContext'
+import { useFacilityFilter } from '../../hooks/useFacilityFilter'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/card'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
@@ -39,15 +37,6 @@ import {
 } from '../../components/ui/select'
 import PageHeader from '../../components/layout/PageHeader'
 
-const sampleInitialQueues = [
-  { id: '1', ticketNo: 'A-012', serviceType: 'General Consultation', patientName: 'Santos, Maria Lourdes', priority: false, status: 'serving', counter: 'Counter 1', issuedAt: '09:15 AM' },
-  { id: '2', ticketNo: 'A-013', serviceType: 'General Consultation', patientName: 'Dela Cruz, Jose Antonio', priority: true, status: 'waiting', counter: '-', issuedAt: '09:22 AM' },
-  { id: '3', ticketNo: 'B-008', serviceType: 'Health Screening', patientName: 'Cruz, Ana Patricia', priority: false, status: 'waiting', counter: '-', issuedAt: '09:30 AM' },
-  { id: '4', ticketNo: 'C-004', serviceType: 'PhilHealth Encoding', patientName: 'Garcia, Juan Carlos', priority: false, status: 'waiting', counter: '-', issuedAt: '09:35 AM' },
-  { id: '5', ticketNo: 'A-011', serviceType: 'General Consultation', patientName: 'Torres, Rosa Elena', priority: false, status: 'done', counter: 'Counter 1', issuedAt: '08:50 AM' },
-  { id: '6', ticketNo: 'B-007', serviceType: 'Health Screening', patientName: 'Mendoza, Antonio', priority: false, status: 'skipped', counter: 'Counter 2', issuedAt: '09:05 AM' },
-]
-
 export default function QueueManagementPage() {
   const navigate = useNavigate()
   const { userProfile } = useAuth()
@@ -57,37 +46,39 @@ export default function QueueManagementPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
   const [serviceFilter, setServiceFilter] = useState('All')
+  const [updatingTicketIds, setUpdatingTicketIds] = useState(() => new Set())
+  const queuesCollection = useMemo(() => collection(db, 'queues'), [])
+  const queuesQuery = useFacilityFilter(queuesCollection, userProfile?.facilityId)
 
   // Real-time Firestore listener on queues collection
   useEffect(() => {
-    setIsLoading(true)
-    const q = query(collection(db, 'queues'))
+    if (!queuesQuery) {
+      setQueues([])
+      setIsLoading(false)
+      return undefined
+    }
+
     const unsubscribe = onSnapshot(
-      q,
+      queuesQuery,
       (snapshot) => {
-        if (!snapshot.empty) {
-          const items = []
-          snapshot.forEach((d) => items.push({ id: d.id, ...d.data() }))
-          // Sort waiting first, then serving, then others
-          items.sort((a, b) => {
-            const order = { serving: 1, waiting: 2, skipped: 3, done: 4, cancelled: 5 }
-            return (order[a.status] || 9) - (order[b.status] || 9)
-          })
-          setQueues(items)
-        } else {
-          setQueues(sampleInitialQueues)
-        }
+        const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
+        items.sort((a, b) => {
+          const order = { serving: 1, waiting: 2, skipped: 3, done: 4, cancelled: 5 }
+          return (order[a.status] || 9) - (order[b.status] || 9)
+        })
+        setQueues(items)
         setIsLoading(false)
       },
       (error) => {
-        console.warn('Queues subscription warning, using fallback:', error)
-        setQueues(sampleInitialQueues)
+        console.error('Queues subscription failed:', error)
+        toast.error(`Unable to load queue tickets: ${error.message}`)
+        setQueues([])
         setIsLoading(false)
       }
     )
 
     return () => unsubscribe()
-  }, [])
+  }, [queuesQuery])
 
   // Filter queues
   const filteredQueues = useMemo(() => {
@@ -107,75 +98,73 @@ export default function QueueManagementPage() {
       return matchSearch && matchStatus && matchService
     })
   }, [queues, searchTerm, statusFilter, serviceFilter])
+  const isCounterBusy = queues.some(
+    (item) => item.status === 'serving' && item.counter === 1
+  )
+
+  const updateTicket = async (item, updates, successMessage, errorMessage) => {
+    if (!item.id) {
+      toast.error('This ticket is missing its Firestore document ID.')
+      return
+    }
+
+    setUpdatingTicketIds((current) => new Set(current).add(item.id))
+    try {
+      await updateDoc(doc(db, 'queues', item.id), {
+        ...updates,
+        updatedAt: serverTimestamp(),
+      })
+      if (successMessage) successMessage()
+    } catch (err) {
+      console.error(`Queue update failed for ${item.id}:`, err)
+      toast.error(`${errorMessage}: ${err.message}`)
+    } finally {
+      setUpdatingTicketIds((current) => {
+        const next = new Set(current)
+        next.delete(item.id)
+        return next
+      })
+    }
+  }
 
   // Row Action Handlers
-  const handleCall = async (item) => {
-    try {
-      if (item.id && !item.id.match(/^\d+$/)) {
-        await updateDoc(doc(db, 'queues', item.id), {
-          status: 'serving',
-          counter: 'Counter 1',
-          calledAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        })
-      } else {
-        setQueues((prev) =>
-          prev.map((q) => (q.id === item.id ? { ...q, status: 'serving', counter: 'Counter 1' } : q))
-        )
-      }
-      toast.success(`Calling ticket ${item.ticketNo} to Counter 1!`)
-    } catch (err) {
-      toast.error('Failed to call ticket: ' + err.message)
-    }
-  }
+  const handleCall = (item) => updateTicket(
+    item,
+    {
+      status: 'serving',
+      counter: 1,
+      calledAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    },
+    () => toast.success(`Calling ticket ${item.ticketNo} to Counter 1!`),
+    'Failed to call ticket'
+  )
 
-  const handleDone = async (item) => {
-    try {
-      if (item.id && !item.id.match(/^\d+$/)) {
-        await updateDoc(doc(db, 'queues', item.id), { status: 'done' })
-      } else {
-        setQueues((prev) =>
-          prev.map((q) => (q.id === item.id ? { ...q, status: 'done' } : q))
-        )
-      }
-      toast.success(`Marked ticket ${item.ticketNo} as Completed.`)
-    } catch (err) {
-      toast.error('Failed to update status: ' + err.message)
-    }
-  }
+  const handleDone = (item) => updateTicket(
+    item,
+    { status: 'done' },
+    () => toast.success(`Marked ticket ${item.ticketNo} as Completed.`),
+    'Failed to update status'
+  )
 
-  const handleSkip = async (item) => {
-    try {
-      if (item.id && !item.id.match(/^\d+$/)) {
-        await updateDoc(doc(db, 'queues', item.id), { status: 'skipped' })
-      } else {
-        setQueues((prev) =>
-          prev.map((q) => (q.id === item.id ? { ...q, status: 'skipped' } : q))
-        )
-      }
-      toast.info(`Skipped ticket ${item.ticketNo}. Beneficiary may be recalled later.`)
-    } catch (err) {
-      toast.error('Failed to skip ticket: ' + err.message)
-    }
-  }
+  const handleSkip = (item) => updateTicket(
+    item,
+    { status: 'skipped', counter: null },
+    () => toast.info(`Skipped ticket ${item.ticketNo}. Beneficiary may be recalled later.`),
+    'Failed to skip ticket'
+  )
 
-  const handleCancel = async (item) => {
-    try {
-      if (item.id && !item.id.match(/^\d+$/)) {
-        await updateDoc(doc(db, 'queues', item.id), { status: 'cancelled' })
-      } else {
-        setQueues((prev) => prev.filter((q) => q.id !== item.id))
-      }
-      toast.warning(`Cancelled ticket ${item.ticketNo}.`)
-    } catch (err) {
-      toast.error('Failed to cancel ticket: ' + err.message)
-    }
-  }
+  const handleCancel = (item) => updateTicket(
+    item,
+    { status: 'cancelled', counter: null },
+    () => toast.warning(`Cancelled ticket ${item.ticketNo}.`),
+    'Failed to cancel ticket'
+  )
 
   const getStatusBadge = (status) => {
     switch (status?.toLowerCase()) {
       case 'serving':
         return (
-          <span className="inline-flex items-center text-xs px-2.5 py-0.5 rounded-full font-medium bg-blue-100 text-blue-800 dark:bg-blue-600 dark:text-white">
+          <span className="inline-flex items-center text-xs px-2.5 py-0.5 rounded-full border border-blue-200 font-medium bg-blue-100 text-blue-800 dark:border-blue-500 dark:bg-blue-600 dark:text-white">
             Serving
           </span>
         )
@@ -207,10 +196,10 @@ export default function QueueManagementPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6">
       <PageHeader
         title="Queue Management"
-        subtitle="Monitor queue status and manage patient flow"
+        subtitle={`Monitor queue status and manage patient flow${userProfile?.facility ? ` · ${userProfile.facility}` : ''}`}
         icon={Layers}
         actions={(
           <div className="flex items-center gap-2">
@@ -347,6 +336,7 @@ export default function QueueManagementPage() {
                           {item.status !== 'serving' && item.status !== 'done' && (
                             <Button
                               size="sm"
+                              disabled={updatingTicketIds.has(item.id) || isCounterBusy}
                               onClick={() => handleCall(item)}
                               className="h-7 px-2.5 text-[11px] bg-blue-600 hover:bg-blue-500 text-white font-medium"
                             >
@@ -356,6 +346,7 @@ export default function QueueManagementPage() {
                           {item.status === 'serving' && (
                             <Button
                               size="sm"
+                              disabled={updatingTicketIds.has(item.id)}
                               onClick={() => handleDone(item)}
                               className="h-7 px-2.5 text-[11px] bg-blue-600 hover:bg-blue-500 text-white font-medium"
                             >
@@ -366,6 +357,7 @@ export default function QueueManagementPage() {
                             <Button
                               size="sm"
                               variant="outline"
+                              disabled={updatingTicketIds.has(item.id)}
                               onClick={() => handleSkip(item)}
                               className="h-7 px-2 text-[11px] border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                             >
@@ -375,6 +367,7 @@ export default function QueueManagementPage() {
                           <Button
                             size="sm"
                             variant="ghost"
+                            disabled={updatingTicketIds.has(item.id)}
                             onClick={() => handleCancel(item)}
                             className="h-7 px-2 text-[11px] border border-slate-300 bg-white text-slate-700 hover:text-slate-900 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:text-slate-100 dark:hover:bg-slate-700"
                           >

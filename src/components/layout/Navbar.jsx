@@ -15,6 +15,8 @@ import {
   Clock,
   Sun,
   Moon,
+  Maximize2,
+  Minimize2,
   Info,
   AlertTriangle,
   CheckCircle2,
@@ -31,10 +33,12 @@ import {
 } from '../ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { Avatar, AvatarFallback } from '../ui/avatar'
-import useAppStore from '../../store/useAppStore'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { useNotifications } from '../../context/NotificationContext'
+import { useLayout } from '../../context/LayoutContext'
+import bagongPilipinasLogo from '../../assets/bagong-pilipinas-logo.png'
+import southCotabatoLogo from '../../assets/south-cotabato-logo.png'
 
 function formatTimeAgo(isoString) {
   if (!isoString) return ''
@@ -56,9 +60,9 @@ function formatTimeAgo(isoString) {
 }
 
 export default function Navbar() {
-  const { toggleSidebar } = useAppStore()
   const { currentUser, userProfile, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
+  const { isMaximized, toggleMaximized, isSidebarOpen, setIsSidebarOpen } = useLayout()
   const { notifications, unreadCount, markAllAsRead } = useNotifications()
   const navigate = useNavigate()
 
@@ -118,22 +122,28 @@ export default function Navbar() {
       {/* Left: Mobile/Desktop Toggle + Brand */}
       <button
         type="button"
-        onClick={toggleSidebar}
+        onClick={() => setIsSidebarOpen((open) => !open)}
         className="p-2 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
         aria-label="Toggle sidebar"
+        aria-expanded={isSidebarOpen}
       >
         <Menu className="w-5 h-5" />
       </button>
 
-      <Link to="/dashboard" className="flex items-center gap-2.5 group">
-        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-md shadow-blue-600/30">
-          <span className="text-white font-bold text-sm tracking-wide">O</span>
-        </div>
-        <div className="hidden sm:block">
-          <span className="text-slate-900 dark:text-white font-bold text-lg leading-none">OneHealth</span>
-          <span className="text-blue-500 dark:text-blue-400 font-bold text-lg leading-none"> InfoSys</span>
-          <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-normal tracking-wider">SCOHIS / Yakap</span>
-        </div>
+      <Link to="/dashboard" className="flex shrink-0 items-center gap-3 group">
+          <img
+            src={bagongPilipinasLogo}
+            alt="Bagong Pilipinas"
+            className="h-8 w-auto max-w-[42px] shrink-0 object-contain rounded-md dark:bg-white dark:p-0.5"
+          />
+          <img
+            src={southCotabatoLogo}
+            alt="South Cotabato Official Seal"
+            className="h-8 w-8 shrink-0 object-contain rounded-full dark:bg-white dark:p-0.5"
+          />
+        <span className="hidden whitespace-nowrap text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white xl:block">
+          South Cotabato – One Health Information System
+        </span>
       </Link>
 
       {/* Spacer */}
@@ -158,6 +168,16 @@ export default function Navbar() {
         ) : (
           <Moon className="w-5 h-5 text-slate-700 transition-transform hover:-rotate-12" />
         )}
+      </button>
+
+      <button
+        type="button"
+        onClick={toggleMaximized}
+        className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+        title={isMaximized ? 'Minimize' : 'Maximize'}
+        aria-label={isMaximized ? 'Minimize' : 'Maximize'}
+      >
+        {isMaximized ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
       </button>
 
       {/* Header Item: Notifications Popover */}

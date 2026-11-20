@@ -1,0 +1,112 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDataPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function hasUserData() {
+      return signedIn() && exists(userDataPath());
+    }
+
+    function getUserData() {
+      return get(userDataPath()).data;
+    }
+
+    function isAdmin() {
+      return hasUserData()
+        && getUserData().role in ['admin', 'Admin', 'administrator', 'Administrator'];
+    }
+
+    function canAccessFacility(facilityId) {
+      return signedIn()
+        && (isAdmin()
+          || (hasUserData()
+            && facilityId is string
+            && getUserData().facilityId == facilityId));
+    }
+
+    function canUpdateOwnProfile(userId) {
+      return signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.facilityId == resource.data.facilityId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name',
+          'email',
+          'preferences',
+          'lastSeenVersion',
+          'lastLogin',
+          'updatedAt'
+        ]);
+    }
+
+    match /users/{userId} {
+      allow get: if signedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isAdmin();
+      allow update: if isAdmin() || canUpdateOwnProfile(userId);
+      allow create, delete: if isAdmin();
+    }
+
+    match /facilities/{facilityId} {
+      allow read: if canAccessFacility(facilityId);
+      allow write: if isAdmin();
+    }
+
+    match /patients/{patientId} {
+      allow read: if canAccessFacility(resource.data.facilityId);
+      allow create: if canAccessFacility(request.resource.data.facilityId);
+      allow update: if canAccessFacility(resource.data.facilityId)
+        && canAccessFacility(request.resource.data.facilityId);
+      allow delete: if canAccessFacility(resource.data.facilityId);
+    }
+
+    match /screenings/{screeningId} {
+      allow read: if canAccessFacility(resource.data.facilityId);
+      allow create: if canAccessFacility(request.resource.data.facilityId);
+      allow update: if canAccessFacility(resource.data.facilityId)
+        && canAccessFacility(request.resource.data.facilityId);
+      allow delete: if canAccessFacility(resource.data.facilityId);
+    }
+
+    match /queues/{queueId} {
+      allow read: if canAccessFacility(resource.data.facilityId);
+      allow create: if canAccessFacility(request.resource.data.facilityId);
+      allow update: if canAccessFacility(resource.data.facilityId)
+        && canAccessFacility(request.resource.data.facilityId);
+      allow delete: if canAccessFacility(resource.data.facilityId);
+    }
+
+    match /sync_logs/{logId} {
+      allow read: if canAccessFacility(resource.data.facilityId);
+      allow create: if canAccessFacility(request.resource.data.facilityId);
+      allow update: if canAccessFacility(resource.data.facilityId)
+        && canAccessFacility(request.resource.data.facilityId);
+      allow delete: if canAccessFacility(resource.data.facilityId);
+    }
+
+    match /philhealth_members/{memberId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if signedIn()
+        && (resource.data.userId == request.auth.uid || resource.data.userId == 'all');
+      allow create, delete: if isAdmin();
+      allow update: if signedIn()
+        && (isAdmin()
+          || ((resource.data.userId == request.auth.uid || resource.data.userId == 'all')
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])));
+    }
+
+    match /ingestion_logs/{logId} {
+      allow read: if canAccessFacility(resource.data.facilityId);
+      allow create: if canAccessFacility(request.resource.data.facilityId);
+      allow update, delete: if false;
+    }
+  }
+}

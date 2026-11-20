@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   Hash,
   Volume2,
@@ -19,12 +19,11 @@ import {
   onSnapshot,
   doc,
   updateDoc,
-  getDocs,
-  orderBy,
-  limit,
+  serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '../../lib/firebase'
 import { useAuth } from '../../context/AuthContext'
+import { useFacilityFilter } from '../../hooks/useFacilityFilter'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card'
 import { Button } from '../../components/ui/button'
 import { Badge } from '../../components/ui/badge'
@@ -33,24 +32,35 @@ import PageHeader from '../../components/layout/PageHeader'
 export default function CounterPage() {
   const { userProfile } = useAuth()
   const facilityName = userProfile?.facility || 'Barangay Health Center - Poblacion'
+  const queuesCollection = useMemo(() => collection(db, 'queues'), [])
+  const servingCollection = useMemo(
+    () => query(
+      queuesCollection,
+      where('status', '==', 'serving'),
+      where('counter', '==', 1)
+    ),
+    [queuesCollection]
+  )
+  const waitingCollection = useMemo(
+    () => query(queuesCollection, where('status', '==', 'waiting')),
+    [queuesCollection]
+  )
+  const servingQuery = useFacilityFilter(servingCollection, userProfile?.facilityId)
+  const waitingQuery = useFacilityFilter(waitingCollection, userProfile?.facilityId)
 
   const [currentServing, setCurrentServing] = useState({
-    ticketNo: 'A-012',
-    serviceType: 'General Consultation',
-    patientName: 'Maria Lourdes Santos',
-    counter: 'Counter 1',
-    calledAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    ticketNo: '—',
+    serviceType: '',
+    patientName: '',
+    counter: '',
+    calledAt: '',
   })
 
-  const [waitingList, setWaitingList] = useState([
-    { id: 'q-1', ticketNo: 'A-013', serviceType: 'General Consultation', patientName: 'Jose Dela Cruz', priority: true },
-    { id: 'q-2', ticketNo: 'B-008', serviceType: 'Health Screening', patientName: 'Ana Flores', priority: false },
-    { id: 'q-3', ticketNo: 'A-014', serviceType: 'General Consultation', patientName: 'Pedro Ramos', priority: false },
-  ])
+  const [waitingList, setWaitingList] = useState([])
 
   const [stats, setStats] = useState({
-    servedToday: 42,
-    waitingCount: 7,
+    servedToday: 0,
+    waitingCount: 0,
     avgWaitTime: '11 mins',
   })
 
@@ -58,98 +68,94 @@ export default function CounterPage() {
 
   // Real-time Firestore sync on queues collection
   useEffect(() => {
-    const q = query(
-      collection(db, 'queues'),
-      where('status', 'in', ['waiting', 'serving'])
-    )
+    if (!servingQuery || !waitingQuery) {
+      setCurrentServing({ ticketNo: '—', serviceType: '', patientName: '', counter: '', calledAt: '' })
+      setWaitingList([])
+      setStats((prev) => ({ ...prev, waitingCount: 0 }))
+      return undefined
+    }
 
-    const unsubscribe = onSnapshot(
-      q,
+    const unsubscribeServing = onSnapshot(
+      servingQuery,
       (snapshot) => {
-        if (!snapshot.empty) {
-          const items = []
-          let servingItem = null
-          snapshot.forEach((d) => {
-            const data = { id: d.id, ...d.data() }
-            if (data.status === 'serving') {
-              servingItem = data
-            } else if (data.status === 'waiting') {
-              items.push(data)
-            }
-          })
-
-          if (servingItem) {
-            setCurrentServing({
-              id: servingItem.id,
-              ticketNo: servingItem.ticketNo || 'A-012',
-              serviceType: servingItem.serviceType || 'General Consultation',
-              patientName: servingItem.patientName || 'Beneficiary',
-              counter: servingItem.counter || 'Counter 1',
-              calledAt: servingItem.calledAt || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            })
-          }
-
-          if (items.length > 0) {
-            setWaitingList(items)
-            setStats((prev) => ({ ...prev, waitingCount: items.length }))
-          }
+        const servingItem = snapshot.docs[0]
+        if (!servingItem) {
+          setCurrentServing({ ticketNo: '—', serviceType: '', patientName: '', counter: '', calledAt: '' })
+          return
         }
+
+        const data = servingItem.data()
+        setCurrentServing({
+          id: servingItem.id,
+          ticketNo: data.ticketNo || '—',
+          serviceType: data.serviceType || '',
+          patientName: data.patientName || '',
+          counter: `Counter ${data.counter}`,
+          calledAt: data.calledAt || '',
+        })
       },
       (err) => {
-        console.warn('Queue listener notice:', err)
+        console.error('Serving ticket listener failed:', err)
+        toast.error(`Unable to load the serving ticket: ${err.message}`)
+        setCurrentServing({ ticketNo: '—', serviceType: '', patientName: '', counter: '', calledAt: '' })
       }
     )
 
-    return () => unsubscribe()
-  }, [])
+    const unsubscribeWaiting = onSnapshot(
+      waitingQuery,
+      (snapshot) => {
+        const items = snapshot.docs
+          .map((item) => ({ id: item.id, ...item.data() }))
+          .sort((a, b) => {
+            const aTime = typeof a.createdAt?.toMillis === 'function'
+              ? a.createdAt.toMillis()
+              : new Date(a.createdAt || 0).getTime()
+            const bTime = typeof b.createdAt?.toMillis === 'function'
+              ? b.createdAt.toMillis()
+              : new Date(b.createdAt || 0).getTime()
+            return aTime - bTime
+          })
+        setWaitingList(items)
+        setStats((prev) => ({ ...prev, waitingCount: items.length }))
+      },
+      (err) => {
+        console.error('Waiting queue listener failed:', err)
+        toast.error(`Unable to load waiting tickets: ${err.message}`)
+        setWaitingList([])
+        setStats((prev) => ({ ...prev, waitingCount: 0 }))
+      }
+    )
+
+    return () => {
+      unsubscribeServing()
+      unsubscribeWaiting()
+    }
+  }, [servingQuery, waitingQuery])
 
   const handleCallNext = async () => {
+    if (currentServing.ticketNo !== '—') {
+      toast.info('Complete or skip the current ticket before calling the next one.')
+      return
+    }
+
     setIsCalling(true)
     try {
       if (waitingList.length > 0) {
         const nextTicket = waitingList[0]
-
-        // Update Firestore if ticket exists
-        if (nextTicket.id && typeof nextTicket.id === 'string' && !nextTicket.id.startsWith('q-')) {
-          await updateDoc(doc(db, 'queues', nextTicket.id), {
-            status: 'serving',
-            counter: 'Counter 1',
-            calledAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          }).catch(() => {})
+        if (!nextTicket.id) {
+          throw new Error('The next ticket is missing its Firestore document ID.')
         }
-
-        setCurrentServing({
-          ticketNo: nextTicket.ticketNo,
-          serviceType: nextTicket.serviceType,
-          patientName: nextTicket.patientName || 'Beneficiary',
-          counter: 'Counter 1',
+        await updateDoc(doc(db, 'queues', nextTicket.id), {
+          status: 'serving',
+          counter: 1,
           calledAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          updatedAt: serverTimestamp(),
         })
-
-        setWaitingList((prev) => prev.slice(1))
-        setStats((prev) => ({
-          ...prev,
-          servedToday: prev.servedToday + 1,
-          waitingCount: Math.max(0, prev.waitingCount - 1),
-        }))
 
         playChime()
         toast.success(`Now serving ticket ${nextTicket.ticketNo} at Counter 1!`)
       } else {
-        const nextNum = parseInt(currentServing.ticketNo.replace(/\D/g, '') || '10') + 1
-        const generated = `A-${String(nextNum).padStart(3, '0')}`
-
-        setCurrentServing({
-          ticketNo: generated,
-          serviceType: 'General Consultation',
-          patientName: 'Next Beneficiary',
-          counter: 'Counter 1',
-          calledAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        })
-
-        setStats((prev) => ({ ...prev, servedToday: prev.servedToday + 1 }))
-        playChime()
-        toast.success(`Now serving ticket ${generated} at Counter 1!`)
+        toast.info('There are no waiting tickets at this facility.')
       }
     } catch (err) {
       toast.error('Failed to call next ticket: ' + err.message)
@@ -159,6 +165,10 @@ export default function CounterPage() {
   }
 
   const handleRecall = () => {
+    if (!currentServing.ticketNo || currentServing.ticketNo === '—') {
+      toast.info('There is no ticket currently being served.')
+      return
+    }
     playChime()
     toast.info(`Recalling ticket ${currentServing.ticketNo} to Counter 1...`, {
       icon: <Volume2 className="w-4 h-4 text-amber-400" />,
@@ -192,7 +202,7 @@ export default function CounterPage() {
   })
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6">
       <PageHeader title="Queue Counter" subtitle="Call and monitor patients at your facility" />
       {/* Header with Facility & Date */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-xl bg-white border border-slate-200 shadow-sm dark:bg-slate-900/70 dark:border-slate-800">

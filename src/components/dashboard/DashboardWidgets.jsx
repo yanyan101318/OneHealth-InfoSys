@@ -8,9 +8,9 @@ const colorStyles = {
   amber: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
 }
 
-export function StatCard({ title, value, icon: Icon, color = 'blue', detail, valueColor }) {
+export function StatCard({ title, value, icon: Icon, color = 'blue', detail, valueColor, className = '' }) {
   return (
-    <Card>
+    <Card className={`rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 ${className}`}>
       <CardContent className="flex items-start justify-between gap-3 p-5">
         <div>
           <p className="text-sm text-muted-foreground">{title}</p>
@@ -25,9 +25,9 @@ export function StatCard({ title, value, icon: Icon, color = 'blue', detail, val
   )
 }
 
-export function ChartContainer({ title, description, actions, children, loading, empty }) {
+export function ChartContainer({ title, description, actions, children, loading, empty, className = '' }) {
   return (
-    <Card className="min-w-0">
+    <Card className={`min-w-0 rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 ${className}`}>
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-2">
         <div>
           <CardTitle className="text-base">{title}</CardTitle>
@@ -46,9 +46,9 @@ export function ChartContainer({ title, description, actions, children, loading,
   )
 }
 
-export function ActivityFeed({ activities, loading }) {
+export function ActivityFeed({ activities, loading, className = '' }) {
   return (
-    <Card>
+    <Card className={`h-full rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 ${className}`}>
       <CardHeader className="pb-3">
         <CardTitle className="text-base">Recent Activity</CardTitle>
         <p className="text-xs text-muted-foreground">System activity for the selected week</p>

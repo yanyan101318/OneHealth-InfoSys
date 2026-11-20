@@ -5,11 +5,10 @@ import WhatsNewModal from '../modals/WhatsNewModal'
 import LockScreen from '../auth/LockScreen'
 import { useAuth } from '../../context/AuthContext'
 import useInactivityTimer from '../../hooks/useInactivityTimer'
-import useAppStore from '../../store/useAppStore'
-import { cn } from '../../lib/utils'
+import { LayoutProvider, useLayout } from '../../context/LayoutContext'
 
-export default function MainLayout() {
-  const { sidebarOpen } = useAppStore()
+function MainLayoutContent() {
+  const { isSidebarOpen } = useLayout()
   const { currentUser, isLocked, setIsLocked } = useAuth()
   useInactivityTimer({
     enabled: Boolean(currentUser) && !isLocked,
@@ -18,22 +17,25 @@ export default function MainLayout() {
   })
 
   return (
-    <div className="min-h-screen bg-background text-foreground transition-colors duration-200">
+    <div className="relative flex h-screen overflow-hidden bg-background text-foreground transition-colors duration-200">
       {/* WhatsNewModal only opens if isModalOpen was set to true on successful login */}
       <WhatsNewModal />
       <Navbar />
-      <Sidebar />
-      <main
-        className={cn(
-          'transition-all duration-300 pt-16 min-h-screen',
-          sidebarOpen ? 'ml-64' : 'ml-14'
-        )}
-      >
-        <div className="space-y-6 bg-background px-4 pb-6 pt-6 sm:px-6 sm:pb-8 lg:px-8">
+      {isSidebarOpen && <Sidebar />}
+      <main className="min-w-0 flex-1 overflow-auto pt-16 transition-all duration-300 ease-in-out">
+        <div className="w-full max-w-none space-y-6 bg-background px-4 pb-6 pt-6 sm:px-6 sm:pb-8 lg:px-8">
           <Outlet />
         </div>
       </main>
       <LockScreen />
     </div>
+  )
+}
+
+export default function MainLayout() {
+  return (
+    <LayoutProvider>
+      <MainLayoutContent />
+    </LayoutProvider>
   )
 }

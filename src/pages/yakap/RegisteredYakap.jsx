@@ -14,12 +14,12 @@ import {
   Plus,
   Activity,
   FileText,
+  Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAuth } from '../../context/AuthContext'
 import {
   collection,
-  query,
-  where,
   onSnapshot,
   doc,
   updateDoc,
@@ -27,6 +27,8 @@ import {
   serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '../../lib/firebase'
+import { isAdminUser } from '../../lib/facilityAccess'
+import { useFacilityFilter } from '../../hooks/useFacilityFilter'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
 import { Badge } from '../../components/ui/badge'
@@ -55,7 +57,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../components/ui/select'
-import { mockYakapPatients, facilitiesData } from '../../data/mockData'
+import { facilitiesData } from '../../data/mockData'
 import { dataGridDarkSx } from './yakapStyles'
 import PageHeader from '../../components/layout/PageHeader'
 
@@ -70,11 +72,74 @@ const clientTypeOptions = [
 
 const yearsList = ['All', '2024', '2023', '2022']
 
+const emptyScreeningForm = {
+  heightCm: '',
+  weightKg: '',
+  bpSystolic: '',
+  bpDiastolic: '',
+  heartRate: '',
+  respiratoryRate: '',
+  temperature: '',
+  bloodSugar: '',
+  clinicalNotes: '',
+}
+
+function validateScreening(form) {
+  const errors = {}
+  const values = Object.fromEntries(
+    Object.entries(form).map(([field, value]) => [field, value === '' ? NaN : Number(value)])
+  )
+
+  const validateRange = (field, label, min, max) => {
+    if (!Number.isFinite(values[field]) || values[field] < min || values[field] > max) {
+      errors[field] = `${label} must be between ${min} and ${max}.`
+    }
+  }
+
+  const validatePositive = (field, label, max) => {
+    if (!Number.isFinite(values[field]) || values[field] <= 0) {
+      errors[field] = `${label} must be greater than 0.`
+    } else if (values[field] > max) {
+      errors[field] = `${label} must not exceed ${max}.`
+    }
+  }
+
+  validatePositive('heightCm', 'Height (cm)', 250)
+  validatePositive('weightKg', 'Weight (kg)', 500)
+  validateRange('bpSystolic', 'Systolic BP', 50, 300)
+  validateRange('bpDiastolic', 'Diastolic BP', 30, 200)
+  validateRange('heartRate', 'Heart rate', 30, 250)
+  validateRange('respiratoryRate', 'Respiratory rate', 5, 60)
+  validateRange('temperature', 'Temperature (°C)', 30, 45)
+  validateRange('bloodSugar', 'Fasting blood sugar', 20, 1000)
+
+  for (const field of ['bpSystolic', 'bpDiastolic', 'heartRate', 'respiratoryRate']) {
+    if (Number.isFinite(values[field]) && !Number.isInteger(values[field])) {
+      errors[field] = 'Enter a whole number.'
+    }
+  }
+
+  if (
+    Number.isFinite(values.bpSystolic) &&
+    Number.isFinite(values.bpDiastolic) &&
+    values.bpSystolic <= values.bpDiastolic
+  ) {
+    errors.bpSystolic = 'Systolic BP must be greater than diastolic BP.'
+    errors.bpDiastolic = 'Diastolic BP must be lower than systolic BP.'
+  }
+
+  return errors
+}
+
 export default function RegisteredYakap() {
+  const { currentUser, userProfile } = useAuth()
+  const isAdmin = isAdminUser(userProfile)
   const [patients, setPatients] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedFacility, setSelectedFacility] = useState('All')
+  const [selectedFacility, setSelectedFacility] = useState(
+    isAdmin ? 'All' : userProfile?.facilityId || '__unassigned__'
+  )
   const [selectedYear, setSelectedYear] = useState('All')
   const [selectedClientType, setSelectedClientType] = useState('All')
 
@@ -98,62 +163,53 @@ export default function RegisteredYakap() {
   })
 
   // Screening form state
-  const [screeningForm, setScreeningForm] = useState({
-    bpSystolic: '120',
-    bpDiastolic: '80',
-    bloodSugar: '95',
-    bmi: '22.4',
-    smokingStatus: 'Non-smoker',
-    symptoms: 'None reported',
-    remarks: 'Patient vital signs are stable and within normal baseline.',
-  })
+  const [screeningForm, setScreeningForm] = useState(emptyScreeningForm)
+  const [screeningErrors, setScreeningErrors] = useState({})
+  const patientsCollection = useMemo(() => collection(db, 'patients'), [])
+  const patientsQuery = useFacilityFilter(patientsCollection, selectedFacility)
+
+  useEffect(() => {
+    setSelectedFacility(isAdmin ? 'All' : userProfile?.facilityId || '__unassigned__')
+  }, [isAdmin, userProfile?.facilityId])
 
   // 1. Real-time Firestore Listener
   useEffect(() => {
-    setIsLoading(true)
-    let q
-    if (selectedFacility === 'All' || selectedFacility === 'all') {
-      q = collection(db, 'patients')
-    } else {
-      q = query(collection(db, 'patients'), where('facilityId', '==', selectedFacility))
+    if (!patientsQuery) {
+      setPatients([])
+      setIsLoading(false)
+      return undefined
     }
 
     const unsubscribe = onSnapshot(
-      q,
+      patientsQuery,
       (snapshot) => {
-        if (!snapshot.empty) {
-          const items = []
-          snapshot.forEach((d) => {
-            const data = d.data()
-            const fullName =
-              data.name ||
-              (data.lastName && data.firstName
-                ? `${data.lastName}, ${data.firstName}`
-                : 'Unnamed Patient')
-            items.push({
-              id: d.id,
-              ...data,
-              name: fullName,
-              facility: data.facility || data.facilityId || 'BHC Poblacion',
-            })
-          })
-          setPatients(items)
-        } else {
-          // If Firestore collection is empty, use mock items as fallback
-          setPatients(mockYakapPatients)
-        }
+        const items = snapshot.docs.map((d) => {
+          const data = d.data()
+          const fullName =
+            data.name ||
+            (data.lastName && data.firstName
+              ? `${data.lastName}, ${data.firstName}`
+              : 'Unnamed Patient')
+          return {
+            id: d.id,
+            ...data,
+            name: fullName,
+            facility: data.facility || data.facilityId || 'BHC Poblacion',
+          }
+        })
+        setPatients(items)
         setIsLoading(false)
       },
       (error) => {
         console.error('Firestore onSnapshot error:', error)
         toast.error('Real-time sync error: ' + error.message)
-        setPatients(mockYakapPatients)
+        setPatients([])
         setIsLoading(false)
       }
     )
 
     return () => unsubscribe()
-  }, [selectedFacility])
+  }, [patientsQuery])
 
   // Filter patients client-side for search, year, and client type
   const filteredPatients = useMemo(() => {
@@ -182,22 +238,31 @@ export default function RegisteredYakap() {
 
   const handleResetFilters = () => {
     setSearchTerm('')
-    setSelectedFacility('All')
+    const defaultFacility = isAdmin ? 'All' : userProfile?.facilityId || '__unassigned__'
+    if (selectedFacility !== defaultFacility) setIsLoading(true)
+    setSelectedFacility(defaultFacility)
     setSelectedYear('All')
     setSelectedClientType('All')
     toast.info('Filters reset to default')
   }
 
+  const handleFacilityChange = (facilityId) => {
+    if (!isAdmin) return
+    if (facilityId !== selectedFacility) setIsLoading(true)
+    setSelectedFacility(facilityId)
+  }
+
   // Firestore action: Generate Consent Form
   const handleGenerateConsent = async (patient) => {
     try {
-      if (patient.id && typeof patient.id === 'string' && patient.id.startsWith('pat-')) {
-        const patientRef = doc(db, 'patients', patient.id)
-        await updateDoc(patientRef, {
-          hasConsentForm: true,
-          consentGeneratedAt: new Date().toISOString(),
-        })
+      if (typeof patient.id !== 'string') {
+        throw new Error('Patient record is not available in Firestore.')
       }
+      const patientRef = doc(db, 'patients', patient.id)
+      await updateDoc(patientRef, {
+        hasConsentForm: true,
+        consentGeneratedAt: new Date().toISOString(),
+      })
       toast.success(`Consent Form generated successfully for ${patient.name}`)
     } catch (err) {
       console.error('Error generating consent form:', err)
@@ -207,42 +272,84 @@ export default function RegisteredYakap() {
 
   const handleOpenScreening = (patient) => {
     setSelectedRow(patient)
+    setScreeningForm({ ...emptyScreeningForm })
+    setScreeningErrors({})
     setScreeningModalOpen(true)
   }
 
-  // Firestore action: Save Screening Result
+  const handleScreeningDialogChange = (open) => {
+    if (!open && isSubmittingScreening) return
+    setScreeningModalOpen(open)
+    if (!open) {
+      setScreeningForm({ ...emptyScreeningForm })
+      setScreeningErrors({})
+    }
+  }
+
+  const handleScreeningFieldChange = (field, value) => {
+    setScreeningForm((current) => ({ ...current, [field]: value }))
+    setScreeningErrors((current) => {
+      const next = { ...current }
+      delete next[field]
+      if (field === 'bpSystolic' || field === 'bpDiastolic') {
+        delete next.bpSystolic
+        delete next.bpDiastolic
+      }
+      return next
+    })
+  }
+
   const handleSaveScreening = async (e) => {
     e.preventDefault()
+    if (!currentUser?.uid) {
+      toast.error('You must be signed in to save a health screening.')
+      return
+    }
+    const screeningFacilityId = isAdmin
+      ? selectedRow?.facilityId
+      : userProfile?.facilityId
+    if (!screeningFacilityId) {
+      toast.error('The patient must have an assigned facility before screening can be saved.')
+      return
+    }
+
+    const errors = validateScreening(screeningForm)
+    setScreeningErrors(errors)
+    if (Object.keys(errors).length > 0) return
+
     setIsSubmittingScreening(true)
     try {
+      const heightCm = Number(screeningForm.heightCm)
+      const weightKg = Number(screeningForm.weightKg)
+      const bmi = Number((weightKg / ((heightCm / 100) ** 2)).toFixed(1))
       const screeningData = {
         patientId: selectedRow?.id,
         patientName: selectedRow?.name,
         caseNo: selectedRow?.caseNo,
-        bpSystolic: screeningForm.bpSystolic,
-        bpDiastolic: screeningForm.bpDiastolic,
-        bloodSugar: screeningForm.bloodSugar,
-        bmi: screeningForm.bmi,
-        remarks: screeningForm.remarks,
-        createdAt: new Date().toISOString(),
+        screenedBy: currentUser.uid,
+        facility: isAdmin
+          ? selectedRow?.facility || screeningFacilityId
+          : userProfile?.facility || screeningFacilityId,
+        facilityId: screeningFacilityId,
+        heightCm,
+        weightKg,
+        bmi,
+        bpSystolic: Number(screeningForm.bpSystolic),
+        bpDiastolic: Number(screeningForm.bpDiastolic),
+        heartRate: Number(screeningForm.heartRate),
+        respiratoryRate: Number(screeningForm.respiratoryRate),
+        temperature: Number(screeningForm.temperature),
+        bloodSugar: Number(screeningForm.bloodSugar),
+        clinicalNotes: screeningForm.clinicalNotes.trim(),
+        createdAt: serverTimestamp(),
       }
 
       await addDoc(collection(db, 'screenings'), screeningData)
 
-      // Update patient status in Firestore
-      if (selectedRow?.id && typeof selectedRow.id === 'string') {
-        const pRef = doc(db, 'patients', selectedRow.id)
-        await updateDoc(pRef, {
-          status: 'Active',
-          lastScreeningDate: new Date().toISOString(),
-          synced: false,
-        }).catch(() => {})
-      }
-
       setScreeningModalOpen(false)
-      toast.success(
-        `Health screening recorded for ${selectedRow?.name} in Firestore.`
-      )
+      setScreeningForm({ ...emptyScreeningForm })
+      setScreeningErrors({})
+      toast.success('Screening saved successfully')
     } catch (err) {
       console.error('Screening save error:', err)
       toast.error('Failed to save screening to Firestore: ' + err.message)
@@ -262,6 +369,13 @@ export default function RegisteredYakap() {
     setIsRegistering(true)
     try {
       const generatedCaseNo = `CASE-${Date.now().toString().slice(-7)}`
+      const assignedFacilityId = isAdmin
+        ? newPatient.facilityId
+        : userProfile?.facilityId
+      if (!assignedFacilityId) {
+        toast.error('Your account does not have an assigned facility.')
+        return
+      }
       const patientDoc = {
         caseNo: generatedCaseNo,
         memberPin: newPatient.memberPin,
@@ -273,8 +387,8 @@ export default function RegisteredYakap() {
         gender: newPatient.gender,
         clientType: newPatient.clientType,
         enlistmentDate: new Date().toISOString().split('T')[0],
-        facilityId: newPatient.facilityId,
-        facility: facilitiesData.find((f) => f.id === newPatient.facilityId)?.name || 'BHC Poblacion',
+        facilityId: assignedFacilityId,
+        facility: facilitiesData.find((f) => f.id === assignedFacilityId)?.name || userProfile?.facility || 'BHC Poblacion',
         status: 'Active',
         synced: false,
       }
@@ -299,9 +413,45 @@ export default function RegisteredYakap() {
     }
   }
 
-  const getClientTypeBadgeVariant = (type) => {
-    return 'default'
-  }
+  const height = Number(screeningForm.heightCm)
+  const weight = Number(screeningForm.weightKg)
+  const calculatedBmi =
+    height > 0 && weight > 0 ? Number((weight / ((height / 100) ** 2)).toFixed(1)) : null
+  const bmiColor =
+    calculatedBmi === null
+      ? 'text-slate-500 dark:text-slate-400'
+      : calculatedBmi >= 30
+        ? 'text-red-600 dark:text-red-400'
+        : calculatedBmi >= 25
+          ? 'text-yellow-600 dark:text-yellow-400'
+          : calculatedBmi >= 18.5
+            ? 'text-green-600 dark:text-green-400'
+            : 'text-amber-600 dark:text-amber-400'
+
+  const renderScreeningNumberField = (field, label, { min, max, step = '1', unit } = {}) => (
+    <div className="space-y-1.5">
+      <Label htmlFor={`screening-${field}`} className="text-sm font-medium text-slate-700 dark:text-slate-300">
+        {label}{unit ? ` (${unit})` : ''}
+      </Label>
+      <Input
+        id={`screening-${field}`}
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={screeningForm[field]}
+        onChange={(event) => handleScreeningFieldChange(field, event.target.value)}
+        aria-invalid={Boolean(screeningErrors[field])}
+        aria-describedby={screeningErrors[field] ? `screening-${field}-error` : undefined}
+        className="h-9 border-slate-300 bg-white text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+      />
+      {screeningErrors[field] && (
+        <p id={`screening-${field}-error`} className="text-xs text-red-600 dark:text-red-400" role="alert">
+          {screeningErrors[field]}
+        </p>
+      )}
+    </div>
+  )
 
   const columns = [
     {
@@ -484,9 +634,10 @@ export default function RegisteredYakap() {
             />
           </div>
 
-          {/* Facility Dropdown */}
+          {/* Facility filter is available only to admins. */}
+          {isAdmin ? (
           <div className="md:col-span-3">
-            <Select value={selectedFacility} onValueChange={setSelectedFacility}>
+            <Select value={selectedFacility} onValueChange={handleFacilityChange}>
               <SelectTrigger className="bg-slate-50 border-slate-200 text-slate-900 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100">
                 <Building2 className="w-4 h-4 text-slate-400 mr-2" />
                 <SelectValue placeholder="Facility" />
@@ -503,6 +654,12 @@ export default function RegisteredYakap() {
               </SelectContent>
             </Select>
           </div>
+          ) : (
+            <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 md:col-span-3">
+              <Building2 className="h-4 w-4 text-slate-400" />
+              {userProfile?.facility || 'No assigned facility'}
+            </div>
+          )}
 
           {/* Year Dropdown */}
           <div className="md:col-span-2">
@@ -688,23 +845,29 @@ export default function RegisteredYakap() {
 
               <div className="space-y-1.5">
                 <Label className="text-xs text-slate-700 dark:text-slate-300">Facility</Label>
-                <Select
-                  value={newPatient.facilityId}
-                  onValueChange={(val) => setNewPatient({ ...newPatient, facilityId: val })}
-                >
-                  <SelectTrigger className="bg-white border-slate-300 text-slate-900 h-9 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white border-slate-200 text-slate-900 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100">
-                    {facilitiesData
-                      .filter((f) => f.id !== 'all')
-                      .map((f) => (
-                        <SelectItem key={f.id} value={f.id}>
-                          {f.name}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
+                {isAdmin ? (
+                  <Select
+                    value={newPatient.facilityId}
+                    onValueChange={(val) => setNewPatient({ ...newPatient, facilityId: val })}
+                  >
+                    <SelectTrigger className="bg-white border-slate-300 text-slate-900 h-9 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white border-slate-200 text-slate-900 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100">
+                      {facilitiesData
+                        .filter((f) => f.id !== 'all')
+                        .map((f) => (
+                          <SelectItem key={f.id} value={f.id}>
+                            {f.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="flex h-9 items-center rounded-md border border-slate-300 bg-slate-50 px-3 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                    {userProfile?.facility || 'No assigned facility'}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -730,84 +893,81 @@ export default function RegisteredYakap() {
       </Dialog>
 
       {/* Health Screening Dialog */}
-      <Dialog open={screeningModalOpen} onOpenChange={setScreeningModalOpen}>
-        <DialogContent className="max-w-lg bg-white text-slate-900 border border-slate-200 shadow-2xl rounded-lg dark:bg-slate-900 dark:text-slate-100 dark:border-slate-800">
+      <Dialog open={screeningModalOpen} onOpenChange={handleScreeningDialogChange}>
+        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto rounded-lg border border-slate-200 bg-white text-slate-900 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white">
               <Activity className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-              Perform Health Screening
+              Health Screening
             </DialogTitle>
-            <DialogDescription className="text-slate-500 dark:text-slate-400 text-sm">
-              Recording clinical screening for{' '}
-              <span className="text-blue-600 dark:text-blue-400 font-medium">{selectedRow?.name}</span> (Case:{' '}
-              {selectedRow?.caseNo})
+            <DialogDescription className="rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/60">
+              <span className="block text-base font-semibold text-slate-900 dark:text-slate-100">
+                {selectedRow?.name || 'Selected patient'}
+              </span>
+              <span className="mt-1 block font-mono text-sm text-slate-600 dark:text-slate-300">
+                Case No: {selectedRow?.caseNo || '—'}
+              </span>
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleSaveScreening} className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Systolic BP (mmHg)</Label>
-                <Input
-                  value={screeningForm.bpSystolic}
-                  onChange={(e) =>
-                    setScreeningForm({ ...screeningForm, bpSystolic: e.target.value })
-                  }
-                  className="bg-white border border-slate-300 text-slate-900 h-9 text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100"
-                />
+          <form onSubmit={handleSaveScreening} noValidate className="space-y-4 py-2">
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Anthropometric</h3>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {renderScreeningNumberField('heightCm', 'Height', { min: '0', max: '250', step: '0.1', unit: 'cm' })}
+                {renderScreeningNumberField('weightKg', 'Weight', { min: '0', max: '500', step: '0.1', unit: 'kg' })}
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label htmlFor="screening-bmi" className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                    BMI (kg/m²)
+                  </Label>
+                  <Input
+                    id="screening-bmi"
+                    readOnly
+                    value={calculatedBmi ?? ''}
+                    aria-label="Calculated BMI"
+                    className={`h-9 border-slate-300 bg-slate-50 font-semibold dark:border-slate-700 dark:bg-slate-800 ${bmiColor}`}
+                  />
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Diastolic BP (mmHg)</Label>
-                <Input
-                  value={screeningForm.bpDiastolic}
-                  onChange={(e) =>
-                    setScreeningForm({ ...screeningForm, bpDiastolic: e.target.value })
-                  }
-                  className="bg-white border border-slate-300 text-slate-900 h-9 text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100"
-                />
-              </div>
-            </div>
+            </section>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Fasting Blood Sugar (mg/dL)</Label>
-                <Input
-                  value={screeningForm.bloodSugar}
-                  onChange={(e) =>
-                    setScreeningForm({ ...screeningForm, bloodSugar: e.target.value })
-                  }
-                  className="bg-white border border-slate-300 text-slate-900 h-9 text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100"
-                />
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Vital Signs</h3>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Blood Pressure (mmHg)</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {renderScreeningNumberField('bpSystolic', 'Systolic', { min: '50', max: '300' })}
+                    {renderScreeningNumberField('bpDiastolic', 'Diastolic', { min: '30', max: '200' })}
+                  </div>
+                </div>
+                {renderScreeningNumberField('heartRate', 'Heart Rate', { min: '30', max: '250', unit: 'BPM' })}
+                {renderScreeningNumberField('respiratoryRate', 'Respiratory Rate', { min: '5', max: '60', unit: 'breaths/min' })}
+                {renderScreeningNumberField('temperature', 'Temperature', { min: '30', max: '45', step: '0.1', unit: '°C' })}
+                {renderScreeningNumberField('bloodSugar', 'Fasting Blood Sugar', { min: '20', max: '1000', step: '0.1', unit: 'mg/dL' })}
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Calculated BMI</Label>
-                <Input
-                  value={screeningForm.bmi}
-                  onChange={(e) =>
-                    setScreeningForm({ ...screeningForm, bmi: e.target.value })
-                  }
-                  className="bg-white border border-slate-300 text-slate-900 h-9 text-xs focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100"
-                />
-              </div>
-            </div>
+            </section>
 
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Clinical Assessment Notes</Label>
+            <section className="space-y-1.5">
+              <Label htmlFor="screening-clinical-notes" className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                Clinical Notes
+              </Label>
               <textarea
+                id="screening-clinical-notes"
                 rows={3}
-                value={screeningForm.remarks}
-                onChange={(e) =>
-                  setScreeningForm({ ...screeningForm, remarks: e.target.value })
-                }
+                value={screeningForm.clinicalNotes}
+                onChange={(event) => handleScreeningFieldChange('clinicalNotes', event.target.value)}
+                placeholder="Add observations or clinical notes..."
                 className="w-full resize-y rounded-md border border-slate-300 bg-white p-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
               />
-            </div>
+            </section>
 
             <DialogFooter className="pt-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setScreeningModalOpen(false)}
+                disabled={isSubmittingScreening}
+                onClick={() => handleScreeningDialogChange(false)}
                 className="border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
               >
                 Cancel
@@ -817,7 +977,8 @@ export default function RegisteredYakap() {
                 disabled={isSubmittingScreening}
                 className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
               >
-                {isSubmittingScreening ? 'Saving to Firestore...' : 'Save Screening Result'}
+                {isSubmittingScreening && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isSubmittingScreening ? 'Saving...' : 'Save Screening Result'}
               </Button>
             </DialogFooter>
           </form>

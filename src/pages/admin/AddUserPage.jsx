@@ -2,9 +2,10 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   createUserWithEmailAndPassword,
+  signOut,
 } from 'firebase/auth'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
-import { auth, db } from '../../lib/firebase'
+import { db, provisioningAuth } from '../../lib/firebase'
 import { toast } from 'sonner'
 import {
   UserPlus,
@@ -22,16 +23,10 @@ import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import PageHeader from '../../components/layout/PageHeader'
+import { facilitiesData } from '../../data/mockData'
 
 const ROLES = ['Admin', 'Physician', 'Health Worker', 'Encoder']
-const FACILITIES = [
-  'Barangay Health Center - Poblacion',
-  'Barangay Health Center - Sta. Cruz',
-  'Barangay Health Center - San Isidro',
-  'Rural Health Unit - Main',
-  'Rural Health Unit - North',
-  'Municipal Health Office',
-]
+const FACILITIES = facilitiesData.filter((facility) => facility.id !== 'all')
 
 export default function AddUserPage() {
   const navigate = useNavigate()
@@ -43,7 +38,7 @@ export default function AddUserPage() {
     email: '',
     tempPassword: '',
     role: 'Health Worker',
-    facility: FACILITIES[0],
+    facilityId: FACILITIES[0].id,
     philhealthAccredId: '',
   })
 
@@ -62,7 +57,7 @@ export default function AddUserPage() {
     if (!form.tempPassword) e.tempPassword = 'Temporary password is required.'
     else if (form.tempPassword.length < 8) e.tempPassword = 'Password must be at least 8 characters.'
     if (!form.role) e.role = 'Role is required.'
-    if (!form.facility) e.facility = 'Facility is required.'
+    if (!form.facilityId) e.facilityId = 'Facility is required.'
     return e
   }
 
@@ -77,22 +72,31 @@ export default function AddUserPage() {
     setSubmitting(true)
     try {
       // 1. Create Firebase Auth user
-      const cred = await createUserWithEmailAndPassword(auth, form.email.trim(), form.tempPassword)
+      const cred = await createUserWithEmailAndPassword(
+        provisioningAuth,
+        form.email.trim(),
+        form.tempPassword
+      )
       const newUser = cred.user
+      const facility = FACILITIES.find((item) => item.id === form.facilityId)
 
       // 2. Create Firestore user profile
-      await setDoc(doc(db, 'users', newUser.uid), {
-        name: form.fullName.trim(),
-        email: form.email.trim().toLowerCase(),
-        role: form.role,
-        facility: form.facility,
-        facilityId: form.facility.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
-        philhealthAccredId: form.philhealthAccredId.trim() || null,
-        status: 'active',
-        requiresPasswordChange: true,     // force reset on first login
-        createdAt: serverTimestamp(),
-        lastSeenVersion: null,
-      })
+      try {
+        await setDoc(doc(db, 'users', newUser.uid), {
+          name: form.fullName.trim(),
+          email: form.email.trim().toLowerCase(),
+          role: form.role,
+          facility: facility.name,
+          facilityId: facility.id,
+          philhealthAccredId: form.philhealthAccredId.trim() || null,
+          status: 'active',
+          requiresPasswordChange: true,
+          createdAt: serverTimestamp(),
+          lastSeenVersion: null,
+        })
+      } finally {
+        await signOut(provisioningAuth)
+      }
 
       toast.success(`User "${form.fullName}" created successfully.`)
       toast.info('They will be prompted to change their password on first login.')
@@ -114,12 +118,12 @@ export default function AddUserPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6">
       {/* Back + header */}
       <div>
         <button
           onClick={() => navigate('/admin/users')}
-          className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200 transition-colors mb-4"
+          className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-900 transition-colors mb-4 dark:text-slate-400 dark:hover:text-slate-100"
         >
           <ArrowLeft className="w-4 h-4" /> Back to User Management
         </button>
@@ -133,27 +137,27 @@ export default function AddUserPage() {
       {/* Form card */}
       <form
         onSubmit={handleSubmit}
-        className="bg-[#1e293b] border border-slate-700/50 rounded-xl p-6 space-y-5"
+        className="bg-white border border-slate-200 rounded-xl p-6 space-y-5 shadow-sm dark:bg-slate-900 dark:border-slate-800"
       >
         {/* Full Name */}
         <div className="space-y-1.5">
-          <Label htmlFor="fullName" className="text-slate-300 flex items-center gap-1.5">
-            <User className="w-3.5 h-3.5 text-slate-400" /> Full Name
+          <Label htmlFor="fullName" className="text-slate-700 flex items-center gap-1.5 dark:text-slate-300">
+            <User className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" /> Full Name
           </Label>
           <Input
             id="fullName"
             value={form.fullName}
             onChange={(e) => set('fullName', e.target.value)}
             placeholder="e.g. Maria Santos"
-            className="bg-slate-900 border-slate-700 text-slate-200 placeholder:text-slate-500"
+            className="bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500"
           />
           {errors.fullName && <p className="text-xs text-red-400">{errors.fullName}</p>}
         </div>
 
         {/* Email */}
         <div className="space-y-1.5">
-          <Label htmlFor="email" className="text-slate-300 flex items-center gap-1.5">
-            <Mail className="w-3.5 h-3.5 text-slate-400" /> Email Address
+          <Label htmlFor="email" className="text-slate-700 flex items-center gap-1.5 dark:text-slate-300">
+            <Mail className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" /> Email Address
           </Label>
           <Input
             id="email"
@@ -161,15 +165,15 @@ export default function AddUserPage() {
             value={form.email}
             onChange={(e) => set('email', e.target.value)}
             placeholder="e.g. msantos@onehealth.gov.ph"
-            className="bg-slate-900 border-slate-700 text-slate-200 placeholder:text-slate-500 font-mono"
+            className="bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 font-mono dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500"
           />
           {errors.email && <p className="text-xs text-red-400">{errors.email}</p>}
         </div>
 
         {/* Temp Password */}
         <div className="space-y-1.5">
-          <Label htmlFor="tempPassword" className="text-slate-300 flex items-center gap-1.5">
-            <Lock className="w-3.5 h-3.5 text-slate-400" /> Temporary Password
+          <Label htmlFor="tempPassword" className="text-slate-700 flex items-center gap-1.5 dark:text-slate-300">
+            <Lock className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" /> Temporary Password
           </Label>
           <div className="relative">
             <Input
@@ -178,17 +182,17 @@ export default function AddUserPage() {
               value={form.tempPassword}
               onChange={(e) => set('tempPassword', e.target.value)}
               placeholder="Minimum 8 characters"
-              className="bg-slate-900 border-slate-700 text-slate-200 placeholder:text-slate-500 pr-10"
+              className="bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 pr-10 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500"
             />
             <button
               type="button"
               onClick={() => setShowPassword((v) => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
             >
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
-          {errors.tempPassword && <p className="text-xs text-red-400">{errors.tempPassword}</p>}
+          {errors.tempPassword && <p className="text-xs text-red-600 dark:text-red-400">{errors.tempPassword}</p>}
           <p className="text-xs text-slate-500">
             The user will be required to change this on first login.
           </p>
@@ -197,44 +201,44 @@ export default function AddUserPage() {
         {/* Role + Facility side by side */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <Label htmlFor="role" className="text-slate-300 flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-slate-400" /> Role
+            <Label htmlFor="role" className="text-slate-700 flex items-center gap-1.5 dark:text-slate-300">
+              <ShieldCheck className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" /> Role
             </Label>
             <select
               id="role"
               value={form.role}
               onChange={(e) => set('role', e.target.value)}
-              className="w-full h-10 rounded-md border border-slate-700 bg-slate-900 text-slate-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              className="w-full h-10 rounded-md border border-slate-300 bg-white text-slate-900 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
             >
               {ROLES.map((r) => (
                 <option key={r} value={r}>{r}</option>
               ))}
             </select>
-            {errors.role && <p className="text-xs text-red-400">{errors.role}</p>}
+            {errors.role && <p className="text-xs text-red-600 dark:text-red-400">{errors.role}</p>}
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="facility" className="text-slate-300 flex items-center gap-1.5">
-              <Building2 className="w-3.5 h-3.5 text-slate-400" /> Facility
+            <Label htmlFor="facility" className="text-slate-700 flex items-center gap-1.5 dark:text-slate-300">
+              <Building2 className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" /> Facility
             </Label>
             <select
               id="facility"
-              value={form.facility}
-              onChange={(e) => set('facility', e.target.value)}
-              className="w-full h-10 rounded-md border border-slate-700 bg-slate-900 text-slate-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              value={form.facilityId}
+              onChange={(e) => set('facilityId', e.target.value)}
+              className="w-full h-10 rounded-md border border-slate-300 bg-white text-slate-900 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
             >
-              {FACILITIES.map((f) => (
-                <option key={f} value={f}>{f}</option>
+              {FACILITIES.map((facility) => (
+                <option key={facility.id} value={facility.id}>{facility.name}</option>
               ))}
             </select>
-            {errors.facility && <p className="text-xs text-red-400">{errors.facility}</p>}
+            {errors.facilityId && <p className="text-xs text-red-600 dark:text-red-400">{errors.facilityId}</p>}
           </div>
         </div>
 
         {/* PhilHealth Accreditation ID (optional) */}
         <div className="space-y-1.5">
-          <Label htmlFor="philhealthAccredId" className="text-slate-300 flex items-center gap-1.5">
-            <IdCard className="w-3.5 h-3.5 text-slate-400" /> PhilHealth Accreditation ID{' '}
+          <Label htmlFor="philhealthAccredId" className="text-slate-700 flex items-center gap-1.5 dark:text-slate-300">
+            <IdCard className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" /> PhilHealth Accreditation ID{' '}
             <span className="text-slate-500 text-xs font-normal">(Optional)</span>
           </Label>
           <Input
@@ -242,34 +246,34 @@ export default function AddUserPage() {
             value={form.philhealthAccredId}
             onChange={(e) => set('philhealthAccredId', e.target.value)}
             placeholder="e.g. PHA-2024-00123"
-            className="bg-slate-900 border-slate-700 text-slate-200 placeholder:text-slate-500 font-mono"
+            className="bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 font-mono dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 dark:placeholder:text-slate-500"
           />
         </div>
 
         {/* Info box */}
-        <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-700/60 text-xs text-slate-400 space-y-1">
-          <p className="font-medium text-slate-300">What happens next?</p>
+        <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1 dark:bg-slate-800/60 dark:border-slate-700/60 dark:text-slate-400">
+          <p className="font-medium text-slate-700 dark:text-slate-300">What happens next?</p>
           <ul className="list-disc list-inside space-y-0.5">
             <li>A Firebase Auth account is created with the temporary password.</li>
-            <li>A Firestore profile is created under <code className="text-slate-300">users/{'{uid}'}</code>.</li>
+            <li>A Firestore profile is created under <code className="text-slate-700 dark:text-slate-300">users/{'{uid}'}</code>.</li>
             <li>On first login, the user will be forced to change their password.</li>
           </ul>
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-700/50">
+        <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-200 dark:border-slate-700/50">
           <Button
             type="button"
             variant="outline"
             onClick={() => navigate('/admin/users')}
-            className="border-slate-700 text-slate-300 hover:text-white"
+            className="border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
           >
             Cancel
           </Button>
           <Button
             type="submit"
             disabled={submitting}
-            className="bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-2"
+            className="bg-blue-600 hover:bg-blue-500 text-primary-foreground flex items-center gap-2"
           >
             {submitting ? (
               <>

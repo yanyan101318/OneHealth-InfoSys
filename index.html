@@ -5,9 +5,122 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>philhealth</title>
+    <script>
+      try {
+        const theme = localStorage.getItem('theme')
+        document.documentElement.classList.toggle('dark', theme !== 'light')
+      } catch {
+        document.documentElement.classList.add('dark')
+      }
+    </script>
+    <style>
+      html,
+      body,
+      #root {
+        min-height: 100%;
+        margin: 0;
+      }
+
+      #root:empty {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #fff;
+        color: #0f172a;
+      }
+
+      .dark #root:empty {
+        background: #020617;
+        color: #fff;
+      }
+
+      .initial-loading {
+        width: min(100% - 3rem, 48rem);
+        text-align: center;
+        font-family: Inter, Roboto, sans-serif;
+      }
+
+      .initial-loading-title {
+        margin: 1rem 0 0;
+        font-size: 1.125rem;
+        font-weight: 600;
+        letter-spacing: 0.025em;
+      }
+
+      .initial-loading-label {
+        margin: 0.25rem 0 0;
+        color: #475569;
+        font-size: 0.875rem;
+      }
+
+      .dark .initial-loading-label {
+        color: #94a3b8;
+      }
+
+      .initial-loading-icon {
+        width: 3rem;
+        height: 3rem;
+        color: #2563eb;
+      }
+
+      .initial-loading-ecg {
+        display: block;
+        width: 100%;
+        height: 5rem;
+        margin-top: 2rem;
+        overflow: visible;
+      }
+
+      .initial-loading-ecg path {
+        fill: none;
+        stroke: #3b82f6;
+        stroke-width: 3;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-dasharray: 1000;
+        stroke-dashoffset: 1000;
+        filter: drop-shadow(0 0 6px rgb(59 130 246 / 0.8));
+        animation: initial-ecg-draw 2s linear infinite;
+      }
+
+      @keyframes initial-ecg-draw {
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .initial-loading-ecg path {
+          animation-duration: 8s;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="initial-loading" role="status" aria-live="polite">
+        <svg class="initial-loading-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M22 12h-4l-3 9L9 3l-3 9H2"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+        <p class="initial-loading-title">OneHealth InfoSys</p>
+        <p class="initial-loading-label">Loading...</p>
+        <svg
+          class="initial-loading-ecg"
+          viewBox="0 0 800 100"
+          role="img"
+          aria-label="Animated ECG heartbeat"
+          preserveAspectRatio="none"
+        >
+          <path d="M0 50 H230 L270 50 L292 42 L312 58 L335 50 H375 L395 50 L415 8 L445 92 L465 35 L480 50 H530 L550 50 L570 43 L590 57 L610 50 H800" />
+        </svg>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

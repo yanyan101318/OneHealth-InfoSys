@@ -2,8 +2,9 @@ import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+import { getApps } from "firebase/app";
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDyCp-JyiBK0WDUcc1w9CBL5MHSb7KdmNs",
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "philhealth-acf09.firebaseapp.com",
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "philhealth-acf09",
@@ -17,5 +18,8 @@ export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
+const provisioningApp = getApps().find((firebaseApp) => firebaseApp.name === "user-provisioning")
+  || initializeApp(firebaseConfig, "user-provisioning");
+export const provisioningAuth = getAuth(provisioningApp);
 
 console.log("Firebase initialized", app.name);

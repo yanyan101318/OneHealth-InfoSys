@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Eye, EyeOff, Heart, Shield, Activity, ArrowRight, Lock, Mail } from 'lucide-react'
+import { Eye, EyeOff, Shield, Activity, ArrowRight, Lock, Mail } from 'lucide-react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Button } from '../components/ui/button'
@@ -7,6 +7,8 @@ import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { useAuth } from '../context/AuthContext'
 import { getDashboardPath } from '../lib/dashboardRoute'
+import bagongPilipinasLogo from '../assets/bagong-pilipinas-logo.png'
+import southCotabatoLogo from '../assets/south-cotabato-logo.png'
 
 export default function LoginPage() {
   const [emailOrUsername, setEmailOrUsername] = useState('msantos@onehealth.gov.ph')
@@ -80,19 +82,26 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex bg-[#0f172a]">
       {/* Left Panel - Login Form */}
-      <div className="flex-1 flex flex-col justify-center px-8 py-12 lg:px-16 max-w-xl mx-auto lg:mx-0 w-full">
+      <div className="relative flex-1 flex flex-col justify-center px-8 py-12 lg:px-16 max-w-xl mx-auto lg:mx-0 w-full">
         {/* Brand / Logo */}
         <div className="mb-8">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30">
-              <Heart className="w-5 h-5 text-white" />
+          <div className="mb-8 flex w-full items-center justify-between px-2">
+            <img
+              src={bagongPilipinasLogo}
+              alt="Bagong Pilipinas"
+              className="h-14 w-auto object-contain drop-shadow-lg"
+            />
+            <div className="min-w-0 flex-1 px-3 text-center">
+              <h1 className="whitespace-nowrap text-lg font-bold tracking-wide text-white sm:text-xl">
+                OneHealth InfoSys
+              </h1>
+              <p className="text-xs text-slate-400">Sistemang Pangkalusugan (SCOHIS / Yakap)</p>
             </div>
-            <div>
-              <div className="text-xl font-bold text-white leading-none">
-                OneHealth <span className="text-blue-400">InfoSys</span>
-              </div>
-              <div className="text-xs text-slate-400">Sistemang Pangkalusugan (SCOHIS / Yakap)</div>
-            </div>
+            <img
+              src={southCotabatoLogo}
+              alt="South Cotabato Official Seal"
+              className="h-14 w-auto object-contain drop-shadow-lg"
+            />
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">Welcome back</h1>
           <p className="text-slate-400">Sign in to your Yakap health center account.</p>
@@ -168,7 +177,7 @@ export default function LoginPage() {
             {isLoading ? (
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Signing in with Firebase...
+                Signing in...
               </div>
             ) : (
               <div className="flex items-center gap-2">
@@ -261,7 +270,7 @@ export default function LoginPage() {
               <span className="text-xs font-semibold uppercase text-blue-400">System Status</span>
               <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                Live & Operational (Firebase Connected)
+                Live & Operational
               </span>
             </div>
             <p className="text-slate-300 text-xs italic">

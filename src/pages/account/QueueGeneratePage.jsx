@@ -12,7 +12,15 @@ import {
   QrCode,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { collection, addDoc } from 'firebase/firestore'
+import {
+  addDoc,
+  collection,
+  getDocs,
+  query,
+  serverTimestamp,
+  Timestamp,
+  where,
+} from 'firebase/firestore'
 import { db } from '../../lib/firebase'
 import { useAuth } from '../../context/AuthContext'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../../components/ui/card'
@@ -48,15 +56,7 @@ export default function QueueGeneratePage() {
   const [isGenerating, setIsGenerating] = useState(false)
 
   // Last generated ticket
-  const [generatedTicket, setGeneratedTicket] = useState({
-    ticketNo: 'A-015',
-    serviceType: 'General Consultation',
-    patientName: 'Santos, Maria',
-    priority: false,
-    issuedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    date: new Date().toLocaleDateString(),
-    estimatedWait: '10 - 15 mins',
-  })
+  const [generatedTicket, setGeneratedTicket] = useState(null)
 
   const handleGenerate = async (e) => {
     e.preventDefault()
@@ -65,29 +65,45 @@ export default function QueueGeneratePage() {
     try {
       const selected = serviceTypes.find((s) => s.id === serviceType)
       const prefix = selected ? selected.prefix : 'A'
-      const randomNum = Math.floor(10 + Math.random() * 89)
-      const ticketNo = `${prefix}-${isPriority ? 'P' : ''}${randomNum}`
       const now = new Date()
+      const facilityId = userProfile?.facilityId
+      if (!facilityId) {
+        throw new Error('Your account does not have an assigned facility.')
+      }
+
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const startOfTomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+      const todayTickets = await getDocs(query(
+        collection(db, 'queues'),
+        where('facilityId', '==', facilityId),
+        where('createdAt', '>=', Timestamp.fromDate(startOfDay)),
+        where('createdAt', '<', Timestamp.fromDate(startOfTomorrow))
+      ))
+      const lastSequence = todayTickets.docs.reduce((highest, ticket) => {
+        const match = String(ticket.data().ticketNo || '').match(
+          new RegExp(`^${prefix}-(?:P)?(\\d+)$`, 'i')
+        )
+        return match ? Math.max(highest, Number(match[1])) : highest
+      }, 0)
+      const sequence = lastSequence + 1
+      const ticketNo = `${prefix}-${isPriority ? 'P' : ''}${String(sequence).padStart(3, '0')}`
 
       const ticketData = {
         ticketNo,
         serviceType,
         patientName: patientName.trim() || 'Walk-in Beneficiary',
-        memberPin: memberPin.trim() || 'N/A',
+        memberPin: memberPin.trim() || null,
         priority: isPriority,
         status: 'waiting',
+        counter: null,
         issuedAt: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         date: now.toLocaleDateString(),
         facilityName,
-        createdAt: now.toISOString(),
+        facilityId,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       }
-
-      // Add to Firestore queues collection
-      try {
-        await addDoc(collection(db, 'queues'), ticketData)
-      } catch (fsErr) {
-        console.warn('Firestore queue sync note:', fsErr)
-      }
+      await addDoc(collection(db, 'queues'), ticketData)
 
       setGeneratedTicket({
         ...ticketData,
@@ -107,11 +123,12 @@ export default function QueueGeneratePage() {
   }
 
   const handlePrint = () => {
-    toast.success(`Printing ticket ${generatedTicket.ticketNo}... (Mock Printer Dispatch)`)
+    if (!generatedTicket) return
+    window.print()
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="mx-auto w-full max-w-[1600px] space-y-6">
       <PageHeader
         title="Queue Ticket Generator"
         subtitle="Issue queue numbers for patient triage and health services"
@@ -123,7 +140,7 @@ export default function QueueGeneratePage() {
         <Card className="bg-white border border-slate-200 shadow-sm md:col-span-7 dark:bg-[#1e293b] dark:border-slate-700 dark:shadow-none">
           <CardHeader className="border-b border-slate-200 pb-4 dark:border-slate-800">
             <CardTitle className="text-base text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <Ticket className="w-4 h-4 text-emerald-400" />
+              <Ticket className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
               Ticket Generation Form
             </CardTitle>
             <CardDescription className="text-xs text-slate-500 dark:text-slate-400">
@@ -137,7 +154,7 @@ export default function QueueGeneratePage() {
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium text-slate-700 dark:text-slate-300">Service Category *</Label>
                 <Select value={serviceType} onValueChange={setServiceType}>
-                  <SelectTrigger className="bg-white border-slate-300 text-slate-900 h-10 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100">
+                  <SelectTrigger className="bg-white border-slate-200 text-slate-900 h-10 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100">
                     <SelectValue placeholder="Select service" />
                   </SelectTrigger>
                   <SelectContent className="bg-white border-slate-200 text-slate-900 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100">
@@ -240,12 +257,14 @@ export default function QueueGeneratePage() {
                   Your Queue Number
                 </span>
                 <div className="text-4xl font-extrabold text-slate-900 dark:text-white font-mono tracking-wider py-1">
-                  {generatedTicket.ticketNo}
+                  {generatedTicket?.ticketNo || '—'}
                 </div>
-                <span className="text-[11px] font-semibold text-blue-700 dark:text-blue-400">
-                  {generatedTicket.serviceType}
-                </span>
-                {generatedTicket.priority && (
+                {generatedTicket && (
+                  <span className="text-[11px] font-semibold text-blue-700 dark:text-blue-400">
+                    {generatedTicket.serviceType}
+                  </span>
+                )}
+                {generatedTicket?.priority && (
                   <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] px-2 py-0.5 mt-1 block w-fit mx-auto rounded-full font-medium dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
                     Priority Lane
                   </span>
@@ -256,18 +275,18 @@ export default function QueueGeneratePage() {
                 <div className="flex justify-between">
                   <span>Patient:</span>
                   <span className="text-slate-900 dark:text-slate-200 font-medium truncate max-w-[140px]">
-                    {generatedTicket.patientName || 'Walk-in'}
+                    {generatedTicket?.patientName || '—'}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Date & Time:</span>
                   <span className="text-slate-700 dark:text-slate-300 font-mono">
-                    {generatedTicket.date} {generatedTicket.issuedAt}
+                    {generatedTicket ? `${generatedTicket.date} ${generatedTicket.issuedAt}` : 'No ticket generated'}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Est. Waiting:</span>
-                  <span className="text-emerald-700 dark:text-emerald-400 font-semibold">{generatedTicket.estimatedWait}</span>
+                  <span className="text-emerald-700 dark:text-emerald-400 font-semibold">{generatedTicket?.estimatedWait || '—'}</span>
                 </div>
               </div>
 
@@ -280,6 +299,7 @@ export default function QueueGeneratePage() {
           <CardFooter className="border-t border-slate-200 pt-4 dark:border-slate-800">
             <Button
               onClick={handlePrint}
+              disabled={!generatedTicket}
               className="w-full bg-green-600 hover:bg-green-700 text-white font-medium gap-2"
             >
               <Printer className="w-4 h-4" />
