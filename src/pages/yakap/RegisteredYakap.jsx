@@ -12,6 +12,7 @@ import {
   UserCheck,
   RotateCcw,
   Plus,
+  Pencil,
   Activity,
   FileText,
   Loader2,
@@ -71,6 +72,27 @@ const clientTypeOptions = [
 ]
 
 const yearsList = ['All', '2024', '2023', '2022']
+
+const registeredPatientGridSx = {
+  ...dataGridDarkSx,
+  '& .MuiDataGrid-columnHeaderTitle': {
+    ...dataGridDarkSx['& .MuiDataGrid-columnHeaderTitle'],
+    whiteSpace: 'nowrap',
+  },
+  '& .MuiDataGrid-cell:not(:last-child)': {
+    borderRight: '1px solid var(--datagrid-row-border)',
+  },
+}
+
+const emptyPatientForm = {
+  firstName: '',
+  lastName: '',
+  memberPin: '',
+  birthdate: '1990-01-01',
+  gender: 'Female',
+  clientType: 'Regular',
+  facilityId: 'bhc-poblacion',
+}
 
 const emptyScreeningForm = {
   heightCm: '',
@@ -148,19 +170,31 @@ export default function RegisteredYakap() {
   const [screeningModalOpen, setScreeningModalOpen] = useState(false)
   const [detailsModalOpen, setDetailsModalOpen] = useState(false)
   const [registerModalOpen, setRegisterModalOpen] = useState(false)
+  const [editingPatient, setEditingPatient] = useState(null)
   const [isSubmittingScreening, setIsSubmittingScreening] = useState(false)
   const [isRegistering, setIsRegistering] = useState(false)
 
   // New Patient Form state
-  const [newPatient, setNewPatient] = useState({
-    firstName: '',
-    lastName: '',
-    memberPin: '',
-    birthdate: '1990-01-01',
-    gender: 'Female',
-    clientType: 'Regular',
-    facilityId: 'bhc-poblacion',
-  })
+  const [newPatient, setNewPatient] = useState({ ...emptyPatientForm })
+
+  useEffect(() => {
+    if (!registerModalOpen) return
+
+    if (editingPatient) {
+      const [fallbackLastName, fallbackFirstName] = (editingPatient.name || '').includes(',')
+        ? editingPatient.name.split(',').map((part) => part.trim())
+        : ['', editingPatient.name || '']
+      setNewPatient({
+        firstName: editingPatient.firstName || fallbackFirstName,
+        lastName: editingPatient.lastName || fallbackLastName,
+        memberPin: editingPatient.memberPin || editingPatient.patientPin || '',
+        birthdate: editingPatient.birthdate || '1990-01-01',
+        gender: editingPatient.gender || 'Female',
+        clientType: editingPatient.clientType || 'Regular',
+        facilityId: editingPatient.facilityId || userProfile?.facilityId || 'bhc-poblacion',
+      })
+    }
+  }, [registerModalOpen, editingPatient, userProfile?.facilityId])
 
   // Screening form state
   const [screeningForm, setScreeningForm] = useState(emptyScreeningForm)
@@ -368,7 +402,6 @@ export default function RegisteredYakap() {
 
     setIsRegistering(true)
     try {
-      const generatedCaseNo = `CASE-${Date.now().toString().slice(-7)}`
       const assignedFacilityId = isAdmin
         ? newPatient.facilityId
         : userProfile?.facilityId
@@ -377,7 +410,7 @@ export default function RegisteredYakap() {
         return
       }
       const patientDoc = {
-        caseNo: generatedCaseNo,
+        caseNo: editingPatient?.caseNo || `CASE-${Date.now().toString().slice(-7)}`,
         memberPin: newPatient.memberPin,
         patientPin: newPatient.memberPin,
         firstName: newPatient.firstName,
@@ -393,21 +426,26 @@ export default function RegisteredYakap() {
         synced: false,
       }
 
-      await addDoc(collection(db, 'patients'), patientDoc)
+      if (editingPatient) {
+        const editablePatientData = { ...patientDoc }
+        delete editablePatientData.caseNo
+        delete editablePatientData.enlistmentDate
+        await updateDoc(doc(db, 'patients', editingPatient.id), {
+          ...editablePatientData,
+          updatedAt: serverTimestamp(),
+        })
+        toast.success('Patient updated successfully')
+      } else {
+        await addDoc(collection(db, 'patients'), patientDoc)
+        toast.success(`Successfully registered ${patientDoc.name} in Yakap database!`)
+      }
+
       setRegisterModalOpen(false)
-      setNewPatient({
-        firstName: '',
-        lastName: '',
-        memberPin: '',
-        birthdate: '1990-01-01',
-        gender: 'Female',
-        clientType: 'Regular',
-        facilityId: 'bhc-poblacion',
-      })
-      toast.success(`Successfully registered ${patientDoc.name} in Yakap database!`)
+      setEditingPatient(null)
+      setNewPatient({ ...emptyPatientForm })
     } catch (err) {
-      console.error('Error registering patient:', err)
-      toast.error('Failed to register patient in Firestore: ' + err.message)
+      console.error(editingPatient ? 'Error updating patient:' : 'Error registering patient:', err)
+      toast.error(`${editingPatient ? 'Failed to update' : 'Failed to register'} patient in Firestore: ${err.message}`)
     } finally {
       setIsRegistering(false)
     }
@@ -457,7 +495,7 @@ export default function RegisteredYakap() {
     {
       field: 'caseNo',
       headerName: 'Case No',
-      width: 140,
+      width: 95,
       renderCell: (params) => (
         <span className="font-mono text-xs font-medium text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 dark:text-slate-200 dark:bg-slate-800 dark:border-slate-700">
           {params.value}
@@ -467,7 +505,7 @@ export default function RegisteredYakap() {
     {
       field: 'memberPin',
       headerName: 'Member PIN',
-      width: 135,
+      width: 100,
       renderCell: (params) => (
         <span className="font-mono text-xs text-slate-700 dark:text-slate-300">{params.value}</span>
       ),
@@ -475,7 +513,7 @@ export default function RegisteredYakap() {
     {
       field: 'patientPin',
       headerName: 'Patient PIN',
-      width: 135,
+      width: 100,
       renderCell: (params) => (
         <span className="font-mono text-xs text-slate-700 dark:text-slate-400">{params.value}</span>
       ),
@@ -483,8 +521,8 @@ export default function RegisteredYakap() {
     {
       field: 'name',
       headerName: 'Name',
-      flex: 2,
-      minWidth: 250,
+      flex: 1,
+      minWidth: 150,
       renderCell: (params) => (
         <div
           className="flex flex-col justify-center py-1 w-full overflow-hidden"
@@ -516,7 +554,7 @@ export default function RegisteredYakap() {
     {
       field: 'gender',
       headerName: 'Gender',
-      width: 90,
+      width: 80,
       renderCell: (params) => (
         <span className="px-2 py-0.5 rounded-md font-medium bg-slate-100 text-slate-700 text-xs border border-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700">
           {params.value}
@@ -526,7 +564,7 @@ export default function RegisteredYakap() {
     {
       field: 'clientType',
       headerName: 'Client Type',
-      width: 140,
+      width: 120,
       renderCell: (params) => (
         <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-xs font-medium border border-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700">
           {params.value}
@@ -535,8 +573,8 @@ export default function RegisteredYakap() {
     },
     {
       field: 'enlistmentDate',
-      headerName: 'Enlistment Date',
-      width: 130,
+      headerName: 'Enlisted',
+      width: 95,
       renderCell: (params) => (
         <span className="font-mono text-xs text-slate-700 dark:text-slate-400">{params.value}</span>
       ),
@@ -544,11 +582,12 @@ export default function RegisteredYakap() {
     {
       field: 'actions',
       headerName: 'Actions',
-      width: 90,
+      width: 100,
+      minWidth: 100,
       sortable: false,
       filterable: false,
-      align: 'center',
-      headerAlign: 'center',
+      align: 'right',
+      headerAlign: 'right',
       renderCell: (params) => {
         const row = params.row
         return (
@@ -565,6 +604,17 @@ export default function RegisteredYakap() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52 bg-white border-slate-200 text-slate-900 shadow-lg dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100">
               <DropdownMenuLabel className="text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider font-semibold">Client Actions</DropdownMenuLabel>
+              <DropdownMenuItem
+                onClick={() => {
+                  setEditingPatient(row)
+                  setSelectedRow(row)
+                  setRegisterModalOpen(true)
+                }}
+                className="cursor-pointer gap-2 focus:bg-slate-100 focus:text-slate-900 dark:focus:bg-slate-800 dark:focus:text-white"
+              >
+                <Pencil className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                <span>Edit Patient</span>
+              </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => handleGenerateConsent(row)}
                 className="cursor-pointer gap-2 focus:bg-slate-100 focus:text-slate-900 dark:focus:bg-slate-800 dark:focus:text-white"
@@ -610,7 +660,11 @@ export default function RegisteredYakap() {
           </Badge>
           <Button
             size="sm"
-            onClick={() => setRegisterModalOpen(true)}
+            onClick={() => {
+              setEditingPatient(null)
+              setNewPatient({ ...emptyPatientForm })
+              setRegisterModalOpen(true)
+            }}
             className="bg-blue-600 hover:bg-blue-700 text-white gap-1.5"
           >
             <Plus className="w-4 h-4" />
@@ -741,18 +795,24 @@ export default function RegisteredYakap() {
             pageSizeOptions={[10, 25, 50]}
             disableRowSelectionOnClick
             rowHeight={60}
-            sx={dataGridDarkSx}
+            sx={registeredPatientGridSx}
           />
         </div>
       )}
 
       {/* Register New Patient Dialog */}
-      <Dialog open={registerModalOpen} onOpenChange={setRegisterModalOpen}>
+      <Dialog
+        open={registerModalOpen}
+        onOpenChange={(open) => {
+          setRegisterModalOpen(open)
+          if (!open) setEditingPatient(null)
+        }}
+      >
         <DialogContent className="max-w-lg bg-white text-slate-900 border-slate-200 dark:bg-slate-900 dark:text-slate-100 dark:border-slate-800">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-white">
               <Plus className="w-5 h-5 text-blue-400" />
-              Register New Yakap Patient
+              {editingPatient ? 'Edit Yakap Patient' : 'Register New Yakap Patient'}
             </DialogTitle>
             <DialogDescription className="text-slate-600 dark:text-slate-300 text-xs">
               Directly enroll beneficiary into Firestore database.
@@ -885,7 +945,7 @@ export default function RegisteredYakap() {
                 disabled={isRegistering}
                 className="bg-blue-600 hover:bg-blue-700 text-white font-medium"
               >
-                {isRegistering ? 'Registering...' : 'Complete Enrollment'}
+                {isRegistering ? (editingPatient ? 'Updating...' : 'Registering...') : editingPatient ? 'Update Patient' : 'Complete Enrollment'}
               </Button>
             </DialogFooter>
           </form>

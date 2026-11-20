@@ -295,7 +295,7 @@ export default function QueueManagementPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-900 dark:text-slate-200">
+              <table className="w-full min-w-[800px] text-left text-xs text-slate-900 dark:text-slate-200">
                 <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider text-xs border-b border-slate-200 dark:bg-slate-800/80 dark:text-slate-400 dark:border-slate-700">
                   <tr>
                     <th className="px-6 py-3.5">Ticket No.</th>

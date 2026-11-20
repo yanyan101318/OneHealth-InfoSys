@@ -55,7 +55,7 @@ const navItems = [
   },
 ]
 
-function NavItem({ item, collapsed }) {
+function NavItem({ item, collapsed, onNavigate }) {
   const location = useLocation()
   const [expanded, setExpanded] = useState(true) // Yakap starts expanded
 
@@ -79,7 +79,10 @@ function NavItem({ item, collapsed }) {
           {/* Clicking Yakap navigates directly to /yakap (redirects to /yakap/registered) */}
           <NavLink
             to={item.to}
-            onClick={() => setExpanded(true)}
+            onClick={() => {
+              setExpanded(true)
+              onNavigate()
+            }}
             className="flex-1 flex items-center gap-3 px-3 py-2.5"
           >
             <item.icon className="w-5 h-5 flex-shrink-0 text-slate-500 dark:text-slate-400" />
@@ -119,6 +122,7 @@ function NavItem({ item, collapsed }) {
               <NavLink
                 key={child.to}
                 to={child.to}
+                onClick={onNavigate}
                 className={({ isActive }) =>
                   cn(
                     'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors',
@@ -142,6 +146,7 @@ function NavItem({ item, collapsed }) {
               <NavLink
                 key={child.to}
                 to={child.to}
+                onClick={onNavigate}
                 title={child.label}
                 className={({ isActive }) =>
                   cn(
@@ -166,6 +171,7 @@ function NavItem({ item, collapsed }) {
     <NavLink
       to={item.to}
       end={item.end}
+      onClick={onNavigate}
       title={collapsed ? item.label : undefined}
       className={({ isActive }) =>
         cn(
@@ -183,7 +189,7 @@ function NavItem({ item, collapsed }) {
   )
 }
 
-export default function Sidebar() {
+export default function Sidebar({ isMobile = false, onClose = () => {} }) {
   const { userProfile } = useAuth()
   const collapsed = false
   const isAdmin = userProfile?.role?.toLowerCase() === 'admin'
@@ -193,13 +199,23 @@ export default function Sidebar() {
   return (
     <aside
       className={cn(
-        'relative z-40 flex h-screen w-64 min-w-[16rem] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white pt-16 dark:border-slate-800 dark:bg-slate-900'
+        'z-40 flex w-64 min-w-[16rem] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900',
+        isMobile
+          ? 'fixed bottom-0 left-0 top-16 h-auto shadow-2xl'
+          : 'relative h-screen pt-16'
       )}
     >
         {/* Navigation list */}
         <nav className="flex-1 px-2 space-y-1.5 overflow-y-auto py-3">
           {visibleNavItems.map((item) => (
-            <NavItem key={item.to} item={item} collapsed={collapsed} />
+            <NavItem
+              key={item.to}
+              item={item}
+              collapsed={collapsed}
+              onNavigate={() => {
+                if (isMobile) onClose()
+              }}
+            />
           ))}
         </nav>
 

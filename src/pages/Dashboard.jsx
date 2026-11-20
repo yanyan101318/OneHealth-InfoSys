@@ -279,8 +279,8 @@ export default function Dashboard() {
   return (
     <div className="mx-auto w-full max-w-[1600px] space-y-6">
       <PageHeader title="System Dashboard" subtitle="Regional overview and analytics" />
-      <div className="grid grid-cols-12 gap-6">
-        <Card className="col-span-12 rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 lg:col-span-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-6 lg:grid-cols-12">
+        <Card className="col-span-1 rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 md:col-span-2 lg:col-span-4">
           <CardContent className="flex min-w-0 items-center gap-3 p-5">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-600 text-lg font-bold text-white">
               {initials(userName)}
@@ -302,7 +302,7 @@ export default function Dashboard() {
         </Card>
 
         {summary.map((item) => (
-          <div key={item.title} className="col-span-12 lg:col-span-2">
+          <div key={item.title} className="col-span-1 lg:col-span-2">
             {loading
               ? <Card className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"><Skeleton className="h-24 w-full" /></Card>
               : <StatCard {...item} />}
@@ -312,10 +312,10 @@ export default function Dashboard() {
         <ActivityFeed
           activities={selectedActivity}
           loading={loading}
-          className="col-span-12 lg:col-span-4"
+          className="col-span-1 md:col-span-2 lg:col-span-4"
         />
         <ChartContainer
-          className="col-span-12 lg:col-span-8"
+          className="col-span-1 md:col-span-2 lg:col-span-8"
           title="Weekly Registration"
           description="Daily registrations for the selected week"
           actions={(
@@ -354,7 +354,7 @@ export default function Dashboard() {
             </LineChart>
           </ResponsiveContainer>
         </ChartContainer>
-        <Card className="col-span-12 rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 lg:col-span-4">
+        <Card className="col-span-1 rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 md:col-span-2 lg:col-span-4">
           <CardHeader><CardTitle className="text-base">Most Active Facility</CardTitle></CardHeader>
           <CardContent>
             {loading ? <Skeleton className="h-20 w-full" /> : activeFacility ? (
@@ -370,7 +370,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <ChartContainer className="col-span-12 lg:col-span-5" title={`Monthly Registration (${year})`} description="Registered individuals by month" loading={loading} empty={!loading && monthlyData.every((item) => item.registrations === 0)}>
+        <ChartContainer className="col-span-1 md:col-span-2 lg:col-span-5" title={`Monthly Registration (${year})`} description="Registered individuals by month" loading={loading} empty={!loading && monthlyData.every((item) => item.registrations === 0)}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={monthlyData} margin={{ top: 8, right: 8, left: -24, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -382,7 +382,7 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </ChartContainer>
 
-        <ChartContainer className="col-span-12 lg:col-span-3" title="Gender Distribution" description="Registered individuals" loading={loading} empty={!loading && genderData.every((item) => item.value === 0)}>
+        <ChartContainer className="col-span-1 md:col-span-2 lg:col-span-3" title="Gender Distribution" description="Registered individuals" loading={loading} empty={!loading && genderData.every((item) => item.value === 0)}>
           <div className="flex h-full items-center">
             <div className="h-full min-h-48 flex-1">
               <ResponsiveContainer width="100%" height="100%">
@@ -405,7 +405,7 @@ export default function Dashboard() {
             </div>
           </div>
         </ChartContainer>
-        <p className="col-span-12 flex items-center gap-1.5 text-xs text-muted-foreground">
+        <p className="col-span-1 flex items-center gap-1.5 text-xs text-muted-foreground md:col-span-2 lg:col-span-12">
           <CalendarDays className="h-3.5 w-3.5" /> Aggregated registration data for {year}
         </p>
       </div>

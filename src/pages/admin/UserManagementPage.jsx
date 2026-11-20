@@ -278,7 +278,7 @@ export default function UserManagementPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[800px] text-sm">
               <thead className="bg-slate-50 dark:bg-slate-800">
                 <tr className="border-b border-slate-200 dark:border-slate-700">
                   {['NAME / EMAIL', 'ROLE', 'FACILITY', 'PHIL. ACCRED. ID', 'STATUS', ''].map((h) => (

@@ -13,9 +13,22 @@ function readMaximizedState() {
   }
 }
 
+function readInitialSidebarState() {
+  try {
+    return (
+      sessionStorage.getItem(MAXIMIZED_STORAGE_KEY) !== 'true' &&
+      typeof window !== 'undefined' &&
+      window.matchMedia('(min-width: 768px)').matches
+    )
+  } catch (error) {
+    console.warn('Unable to determine initial sidebar state:', error)
+    return false
+  }
+}
+
 export function LayoutProvider({ children }) {
   const [isMaximized, setIsMaximized] = useState(readMaximizedState)
-  const [isSidebarOpen, setIsSidebarOpen] = useState(() => !readMaximizedState())
+  const [isSidebarOpen, setIsSidebarOpen] = useState(readInitialSidebarState)
 
   useEffect(() => {
     try {
@@ -30,7 +43,9 @@ export function LayoutProvider({ children }) {
     const handleFullscreenChange = () => {
       if (!document.fullscreenElement) {
         setIsMaximized(false)
-        setIsSidebarOpen(true)
+        setIsSidebarOpen(
+          typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches
+        )
       }
     }
     document.addEventListener('fullscreenchange', handleFullscreenChange)

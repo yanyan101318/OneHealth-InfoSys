@@ -288,11 +288,12 @@ export default function PhilhealthMasterList() {
     {
       field: 'actions',
       headerName: 'Actions',
-      width: 100,
+      width: 120,
+      minWidth: 110,
       sortable: false,
       filterable: false,
-      align: 'center',
-      headerAlign: 'center',
+      align: 'right',
+      headerAlign: 'right',
       renderCell: (params) => {
         const row = params.row
         return (

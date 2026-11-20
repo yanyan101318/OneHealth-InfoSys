@@ -497,7 +497,7 @@ export default function UploadPage() {
             </div>
           ) : (
             <div className="overflow-x-auto bg-white dark:bg-slate-900">
-              <table className="w-full bg-white text-left text-xs text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+              <table className="w-full min-w-[800px] bg-white text-left text-xs text-slate-900 dark:bg-slate-900 dark:text-slate-100">
                 <thead className="bg-slate-50 text-slate-500 dark:bg-slate-800 dark:text-slate-400 uppercase text-xs">
                   <tr>
                     <th className="px-6 py-3">File Name</th>

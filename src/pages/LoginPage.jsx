@@ -86,22 +86,26 @@ export default function LoginPage() {
         {/* Brand / Logo */}
         <div className="mb-8">
           <div className="mb-8 flex w-full items-center justify-between px-2">
-            <img
-              src={bagongPilipinasLogo}
-              alt="Bagong Pilipinas"
-              className="h-14 w-auto object-contain drop-shadow-lg"
-            />
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white shadow-lg">
+              <img
+                src={bagongPilipinasLogo}
+                alt="Bagong Pilipinas"
+                className="h-full w-full object-contain"
+              />
+            </div>
             <div className="min-w-0 flex-1 px-3 text-center">
               <h1 className="whitespace-nowrap text-lg font-bold tracking-wide text-white sm:text-xl">
                 OneHealth InfoSys
               </h1>
               <p className="text-xs text-slate-400">Sistemang Pangkalusugan (SCOHIS / Yakap)</p>
             </div>
-            <img
-              src={southCotabatoLogo}
-              alt="South Cotabato Official Seal"
-              className="h-14 w-auto object-contain drop-shadow-lg"
-            />
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white shadow-lg">
+              <img
+                src={southCotabatoLogo}
+                alt="South Cotabato Official Seal"
+                className="h-[150%] w-[150%] object-contain"
+              />
+            </div>
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">Welcome back</h1>
           <p className="text-slate-400">Sign in to your Yakap health center account.</p>

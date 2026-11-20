@@ -426,8 +426,8 @@ export default function ReportsPage() {
             </div>
           </div>
           <CardContent className="p-6">
-            <div className="rounded-lg border border-slate-200 overflow-auto dark:border-slate-700">
-              <table className="w-full bg-white text-left text-xs dark:bg-[#1e293b]">
+            <div className="w-full overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+              <table className="w-full min-w-[800px] bg-white text-left text-xs dark:bg-[#1e293b]">
                 <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold dark:bg-slate-900 dark:text-slate-400">
                   <tr>
                     {generatedReport.columns.map((column) => (
